@@ -410,7 +410,7 @@ m4+definitions(['
          m4_defines(
             (['M4_EXT_E'], 1),
             (['M4_EXT_I'], 1),
-            (['M4_EXT_M'], 1),
+            (['M4_EXT_M'], 0),
             (['M4_EXT_A'], 0),
             (['M4_EXT_F'], 0),
             (['M4_EXT_D'], 0),
@@ -2838,6 +2838,66 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 // A fake memory with fixed latency.
 // The memory is placed in the fetch pipeline.
 // TODO: (/_cpu, @_mem, @_align)
+\SV
+   module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
+      input   clk, valid_st, spec_ld,
+      input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
+      input   [ADDR_WIDTH-1:0]	    addr,      
+      input   [NB_COL*COL_WIDTH-1:0]  din,
+      output  [NB_COL*COL_WIDTH-1:0]  dout
+   );
+      
+      reg [NB_COL*COL_WIDTH-1:0] outputreg;   
+      reg	[NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
+      
+      always @(posedge clk) begin
+         if(spec_ld) begin
+            outputreg <= RAM[addr];
+         end
+      end
+
+      assign dout = outputreg;
+
+      generate
+            genvar i;
+            for (i = 0; i < NB_COL; i = i+1) begin
+            always @(posedge clk) begin 
+               if (valid_st && we[i]) 
+                  RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
+               end
+            end
+      endgenerate        
+   endmodule
+
+\TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
+   |fetch
+      /instr
+         @M4_MEM_WR_STAGE
+            \SV_plus
+               dmem_ext #(
+                     .SIZE(M4_DATA_MEM_WORDS_HIGH), 
+                     .ADDR_WIDTH(M4_DATA_MEM_WORDS_INDEX_HIGH), 
+                     .COL_WIDTH(M4_WORD_HIGH / M4_ADDRS_PER_WORD), 
+                     .NB_COL(M4_ADDRS_PER_WORD)
+                     )
+               dmem_ext (
+                     .clk     (*clk),
+                     .valid_st($valid_st),
+                     .spec_ld ($spec_ld),
+                     .addr    ($addr[M4_DATA_MEM_WORDS_INDEX_MAX + M4_SUB_WORD_BITS : M4_SUB_WORD_BITS]),
+                     .we      ($st_mask),
+                     .din     ($st_value), 
+                     .dout    ($$ld_value[31:0])
+                     );
+
+   |mem
+      /data
+         @m4_eval(m4_strip_prefix(['@M4_MEM_WR_STAGE']) - M4_ALIGNMENT_VALUE)
+            $ANY = /_cpu|fetch/instr>>M4_ALIGNMENT_VALUE$ANY;
+            /src[2:1]
+               $ANY = /_cpu|fetch/instr/src>>M4_ALIGNMENT_VALUE$ANY;
+
+
 \TLV fixed_latency_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
    // This macro assumes little-endian.
    m4_ifelse(M4_BIG_ENDIAN, 0, [''], ['m4_errprint(['Error: fixed_latency_fake_memory macro only supports little-endian memory.'])'])
@@ -3502,7 +3562,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             $valid_ld = $ld && $commit;
             $valid_st = $st && $commit;
 
-   m4+fixed_latency_fake_memory(/_cpu, 0)
+   m4+verilog_fake_memory(/_cpu, 0)  
+//   m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
          @M4_REG_WR_STAGE
