@@ -291,6 +291,9 @@ m4+definitions(['
    // Build for formal verification (defaulted to 0).
    m4_default(['M4_FORMAL'], 0)  // 1 to enable code for formal verification
 
+   // For openpiton transucer
+   m4_default(['M4_OPENPITON'], 1)  // 1 to generate interface for Openpiton
+
    // A hook for a software-controlled reset. None by default.
    m4_define(['m4_soft_reset'], 1'b0)
 
@@ -1098,7 +1101,7 @@ m4+definitions(['
 
 
    // Define m4+module_def macro to be used as a region line providing the module definition, either inside makerchip,
-   // or outside for formal.
+   // or outside for formal. // RVFI module define
    m4_define(['m4_module_def'],
              ['m4_ifelse(M4_FORMAL, 0,
                          ['\SV['']m4_new_line['']m4_makerchip_module'],
@@ -2817,6 +2820,258 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       $branch_target[M4_PC_RANGE] = $Pc + M4_PC_CNT'b1 + $rslt[M4_PC_RANGE];
          
 
+//=========================//
+//                         //
+//   OPENPITON INTERFACE   //
+//                         //
+//=========================//
+
+m4_define(['m4_module_def'],
+            ['m4_ifelse(M4_OPENPITON, 0,
+            ['\SV['']m4_new_line['']m4_makerchip_module'],
+                  ['module warpv_openpiton(
+                     input logic clk,
+                     input logic rst_n,
+   
+                     // WARP-V --> L1.5
+                     input                           warpv_transducer_mem_valid,
+                     input [31:0]                    warpv_transducer_mem_addr,
+                     input [ 3:0]                    warpv_transducer_mem_wstrb,
+
+                     input [31:0]                    warpv_transducer_mem_wdata,
+                     input [`L15_AMO_OP_WIDTH-1:0]   warpv_transducer_mem_amo_op,
+                     input                           l15_transducer_ack,
+                     input                           l15_transducer_header_ack,
+
+                     // outputs warpv uses                    
+                     output [4:0]                    transducer_l15_rqtype,
+                     output [`L15_AMO_OP_WIDTH-1:0]  transducer_l15_amo_op,
+                     output [2:0]                    transducer_l15_size,
+                     output                          transducer_l15_val,
+                     output [`PHY_ADDR_WIDTH-1:0]    transducer_l15_address,
+                     output [63:0]                   transducer_l15_data,
+                     output                          transducer_l15_nc,
+
+                     // outputs warpv doesn't use                    
+                     output [0:0]                    transducer_l15_threadid,
+                     output                          transducer_l15_prefetch,
+                     output                          transducer_l15_invalidate_cacheline,
+                     output                          transducer_l15_blockstore,
+                     output                          transducer_l15_blockinitstore,
+                     output [1:0]                    transducer_l15_l1rplway,
+                     output [63:0]                   transducer_l15_data_next_entry,
+                     output [32:0]                   transducer_l15_csm_data,
+
+                     //--- L1.5 -> WARP-V
+                     input                           l15_transducer_val,
+                     input [3:0]                     l15_transducer_returntype,
+                     
+                     input [63:0]                    l15_transducer_data_0,
+                     input [63:0]                    l15_transducer_data_1,
+                     
+                     output                          transducer_warpv_mem_ready,
+                     output [31:0]                   transducer_warpv_mem_rdata,
+                     
+                     output                          transducer_l15_req_ack,
+                     output                          warpv_int);'])'])
+])
+
+
+\TLV openpiton_transducer()
+   |fetch
+      /instr
+         
+            \SV_plus              
+               // ** DECODER ** //              
+               reg current_val;
+               reg prev_val;
+               wire new_request = current_val & ~prev_val;
+               always @(posedge clk)
+                  if(!rst_n) begin
+                     current_val <= 0;
+                     prev_val    <= 0;
+                  end
+                  else begin
+                     current_val <= warpv_transducer_mem_valid;
+                     prev_val    <= current_val;
+                  end
+               end
+
+               // are we waiting for an ack
+               reg ack_reg;
+               reg ack_next;
+               always @ (posedge clk) begin
+                  if (!rst_n) begin
+                        ack_reg <= 0;
+                  end
+                  else begin
+                        ack_reg <= ack_next;
+                  end
+               end
+
+               always @ (*) begin
+                  // be careful with these conditionals.
+                  if (l15_transducer_ack) begin
+                        ack_next = ACK_IDLE;
+                  end
+                  else if (new_request) begin
+                        ack_next = ACK_WAIT;
+                  end
+                  else begin
+                        ack_next = ack_reg;
+                  end
+               end
+
+               // if we haven't got an ack and it's an old request, valid should be high
+               // otherwise if we got an ack valid should be high only if we got a new
+               // request
+               assign transducer_l15_val  =  (ack_reg == ACK_WAIT)   ?  warpv_transducer_mem_valid  :
+                                             (ack_reg == ACK_IDLE)   ?  new_request     :
+                                                                        warpv_transducer_mem_valid;
+
+               reg [31:0] warpv_wdata_flipped;
+
+               // unused wires tie to zero
+               assign transducer_l15_threadid         =  1'b0;
+               assign transducer_l15_prefetch         =  1'b0;
+               assign transducer_l15_csm_data         =  33'b0;
+               assign transducer_l15_data_next_entry  =  64'b0;
+               assign transducer_l15_blockstore       =  1'b0;
+               assign transducer_l15_blockinitstore   =  1'b0;
+
+               // is this set when something in the l1 gets replaced? pico has no cache
+               assign transducer_l15_l1rplway = 2'b0;
+               // will pico ever need to invalidate cachelines?
+               assign transducer_l15_invalidate_cacheline = 1'b0;
+
+               // logic to check if a request is new
+               assign transducer_l15_address  = {{8{warpv_transducer_mem_addr[31]}}, warpv_transducer_mem_addr};
+               assign transducer_l15_nc       = warpv_transducer_mem_addr[31] | (transducer_l15_rqtype == `PCX_REQTYPE_AMO);
+               assign transducer_l15_data     = {warpv_wdata_flipped, warpv_wdata_flipped};
+               
+               // set rqtype specific data
+               always @ *
+               begin
+                  if (warpv_transducer_mem_valid) begin
+                     // store or atomic operation 
+                        if (warpv_transducer_mem_wstrb) begin
+                           transducer_l15_rqtype = `STORE_RQ;
+                           // endian wizardry
+                           warpv_wdata_flipped  =  {warpv_transducer_mem_wdata[7:0], warpv_transducer_mem_wdata[15:8],
+                                                   warpv_transducer_mem_wdata[23:16], warpv_transducer_mem_wdata[31:24]};
+
+                           // NO Atomics at the moment
+                           // // if it's an atomic operation, modify the request type.
+                           // // That's it
+                           // if (pico_mem_amo_op != `L15_AMO_OP_NONE) begin
+                           //    transducer_l15_rqtype = `PCX_REQTYPE_AMO;
+                           // end
+
+                           case(warpv_transducer_mem_wstrb)
+                              4'b1111: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_4B;
+                              end
+                              4'b1100, 4'b0011: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_2B;
+                              end
+                              4'b1000, 4'b0100, 4'b0010, 4'b0001: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_1B;
+                              end
+                              // this should never happen
+                              default: begin
+                                 transducer_l15_size = 0;
+                              end
+                           endcase
+                     end
+                     // load operation
+                     else begin
+                           warpv_wdata_flipped = 32'b0;
+                           transducer_l15_rqtype = `LOAD_RQ;
+                           transducer_l15_size = `MSG_DATA_SIZE_4B;
+                     end 
+                  end
+                  else begin
+                        warpv_wdata_flipped = 32'b0;
+                        transducer_l15_rqtype = 5'b0;
+                        transducer_l15_size = 3'b0;
+                  end
+               end
+
+               // ** ENCODER ** //
+
+               reg [31:0] rdata_part;
+               assign transducer_warpv_mem_rdata   =  {rdata_part[7:0], rdata_part[15:8],
+                                                      rdata_part[23:16], rdata_part[31:24]};
+               assign transducer_l15_req_ack       =  l15_transducer_val;
+               
+               // keep track of whether we have received the wakeup interrupt
+               reg int_recv;
+               always @ (posedge clk) begin
+                  if (!rst_n) begin
+                        warpv_int <= 1'b0;
+                  end
+                  else if (int_recv) begin
+                        warpv_int <= 1'b1;
+                  end
+                  else if (warpv_int) begin
+                        warpv_int <= 1'b0;
+                  end
+               end
+                  
+               always @ * begin
+                  if (l15_transducer_val) begin
+                        case(l15_transducer_returntype)
+                           `LOAD_RET, `CPX_RESTYPE_ATOMIC_RES: begin
+                              // load
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b1;
+                              case(transducer_l15_address[3:2])
+                                    2'b00: begin
+                                       rdata_part = l15_transducer_data_0[63:32];
+                                    end
+                                    2'b01: begin
+                                       rdata_part = l15_transducer_data_0[31:0];
+                                    end
+                                    2'b10: begin
+                                       rdata_part = l15_transducer_data_1[63:32];
+                                    end
+                                    2'b11: begin
+                                       rdata_part = l15_transducer_data_1[31:0];
+                                    end
+                                    default: begin
+                                    end
+                              endcase 
+                           end
+                           `ST_ACK: begin
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b1;
+                              rdata_part = 32'b0;
+                           end
+                           `INT_RET: begin
+                              if (l15_transducer_data_0[17:16] == 2'b01) begin
+                                    int_recv = 1'b1;
+                              end
+                              else begin
+                                    int_recv = 1'b0;
+                              end
+                              transducer_warpv_mem_ready = 1'b0;
+                              rdata_part = 32'b0;
+                           end
+                           default: begin
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b0;
+                              rdata_part = 32'b0;
+                           end
+                        endcase 
+                  end
+                  else begin
+                        int_recv = 1'b0;
+                        transducer_warpv_mem_ready = 1'b0;
+                        rdata_part = 32'b0;
+                  end
+               end
+
+
 
 
 
@@ -2869,9 +3124,9 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       endgenerate        
    endmodule
 
-\TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
-   |fetch
-      /instr
+\TLV verilog_fake_memory(/_cpu, /_pipe, /_scope, M4_ALIGNMENT_VALUE)
+   /_pipe
+      /_scope
          @M4_MEM_WR_STAGE
             \SV_plus
                dmem_ext #(
@@ -3562,7 +3817,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             $valid_ld = $ld && $commit;
             $valid_st = $st && $commit;
 
-   m4+verilog_fake_memory(/_cpu, 0)  
+   m4+verilog_fake_memory(/_cpu, |fetch, /instr, 0)  
 //   m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
@@ -3955,8 +4210,12 @@ m4+module_def
 
    m4+cpu(/top)
    m4_ifelse_block(M4_FORMAL, 1, ['
-   m4+formal()
-   '], [''])
+         m4+formal()
+      '], 
+      m4_ifelse_block(M4_OPENPITON, 1, ['
+         m4+openpiton_transducer()
+      '], 
+      ['']))
 
 // Can be used to build for many-core without a NoC (during development).
 \TLV dummy_noc(/_cpu)
