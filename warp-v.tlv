@@ -291,7 +291,7 @@ m4+definitions(['
    // Build for formal verification (defaulted to 0).
    m4_default(['M4_FORMAL'], 0)  // 1 to enable code for formal verification
 
-   // For openpiton transucer
+   // For openpiton transducer
    m4_default(['M4_OPENPITON'], 1)  // 1 to generate interface for Openpiton
 
    // A hook for a software-controlled reset. None by default.
@@ -2826,61 +2826,79 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 //                         //
 //=========================//
 
-m4_define(['m4_module_def'],
-            ['m4_ifelse(M4_OPENPITON, 0,
-            ['\SV['']m4_new_line['']m4_makerchip_module'],
-                  ['module warpv_openpiton(
-                     input logic clk,
-                     input logic rst_n,
+// m4_define(['m4_module_def'],
+//             ['m4_ifelse(M4_OPENPITON, 0,
+//             ['\SV['']m4_new_line['']m4_makerchip_module'],
+//                   ['module warpv_openpiton(
+//                      input logic clk,
+//                      input logic rst_n,
    
-                     // WARP-V --> L1.5
-                     input                           warpv_transducer_mem_valid,
-                     input [31:0]                    warpv_transducer_mem_addr,
-                     input [ 3:0]                    warpv_transducer_mem_wstrb,
+//                      // WARP-V --> L1.5
+//                      input                           warpv_transducer_mem_valid,
+//                      input [31:0]                    warpv_transducer_mem_addr,
+//                      input [ 3:0]                    warpv_transducer_mem_wstrb,
 
-                     input [31:0]                    warpv_transducer_mem_wdata,
-                     input [`L15_AMO_OP_WIDTH-1:0]   warpv_transducer_mem_amo_op,
-                     input                           l15_transducer_ack,
-                     input                           l15_transducer_header_ack,
+//                      input [31:0]                    warpv_transducer_mem_wdata,
+//                      input [`L15_AMO_OP_WIDTH-1:0]   warpv_transducer_mem_amo_op,
+//                      input                           l15_transducer_ack,
+//                      input                           l15_transducer_header_ack,
 
-                     // outputs warpv uses                    
-                     output [4:0]                    transducer_l15_rqtype,
-                     output [`L15_AMO_OP_WIDTH-1:0]  transducer_l15_amo_op,
-                     output [2:0]                    transducer_l15_size,
-                     output                          transducer_l15_val,
-                     output [`PHY_ADDR_WIDTH-1:0]    transducer_l15_address,
-                     output [63:0]                   transducer_l15_data,
-                     output                          transducer_l15_nc,
+//                      // outputs warpv uses                    
+//                      output [4:0]                    transducer_l15_rqtype,
+//                      output [`L15_AMO_OP_WIDTH-1:0]  transducer_l15_amo_op,
+//                      output [2:0]                    transducer_l15_size,
+//                      output                          transducer_l15_val,
+//                      output [`PHY_ADDR_WIDTH-1:0]    transducer_l15_address,
+//                      output [63:0]                   transducer_l15_data,
+//                      output                          transducer_l15_nc,
 
-                     // outputs warpv doesn't use                    
-                     output [0:0]                    transducer_l15_threadid,
-                     output                          transducer_l15_prefetch,
-                     output                          transducer_l15_invalidate_cacheline,
-                     output                          transducer_l15_blockstore,
-                     output                          transducer_l15_blockinitstore,
-                     output [1:0]                    transducer_l15_l1rplway,
-                     output [63:0]                   transducer_l15_data_next_entry,
-                     output [32:0]                   transducer_l15_csm_data,
+//                      // outputs warpv doesn't use                    
+//                      output [0:0]                    transducer_l15_threadid,
+//                      output                          transducer_l15_prefetch,
+//                      output                          transducer_l15_invalidate_cacheline,
+//                      output                          transducer_l15_blockstore,
+//                      output                          transducer_l15_blockinitstore,
+//                      output [1:0]                    transducer_l15_l1rplway,
+//                      output [63:0]                   transducer_l15_data_next_entry,
+//                      output [32:0]                   transducer_l15_csm_data,
 
-                     //--- L1.5 -> WARP-V
-                     input                           l15_transducer_val,
-                     input [3:0]                     l15_transducer_returntype,
+//                      //--- L1.5 -> WARP-V
+//                      input                           l15_transducer_val,
+//                      input [3:0]                     l15_transducer_returntype,
                      
-                     input [63:0]                    l15_transducer_data_0,
-                     input [63:0]                    l15_transducer_data_1,
+//                      input [63:0]                    l15_transducer_data_0,
+//                      input [63:0]                    l15_transducer_data_1,
                      
-                     output                          transducer_warpv_mem_ready,
-                     output [31:0]                   transducer_warpv_mem_rdata,
+//                      output                          transducer_warpv_mem_ready,
+//                      output [31:0]                   transducer_warpv_mem_rdata,
                      
-                     output                          transducer_l15_req_ack,
-                     output                          warpv_int);'])'])
-])
+//                      output                          transducer_l15_req_ack,
+//                      output                          warpv_int);'])'])
+// ])
 
-
+// TODO : move to m4+definitions
+\SV
+   m4_define(['m4_module_def'],
+               ['m4_ifelse(M4_OPENPITON, 0, 
+               ['\SV['']m4_new_line['']m4_makerchip_module'],
+                     ['module warpv_openpiton(
+                        input             clk_gated,
+                        input             rst_n_f,
+                        output reg        warpv_transducer_mem_valid,
+                        input             transducer_warpv_mem_ready,
+                        output reg [31:0] warpv_transducer_mem_addr,
+                        output reg [31:0] warpv_transducer_mem_wdata,
+                        output reg [31:0] warpv_transducer_mem_wstrb,
+                        output reg [`L15_AMO_OP_WIDTH-1:0] warpv_transducer_mem_amo_op,
+                        input [31:0]      transducer_warpv_mem_rdata,
+                        input             warpv_int);'])'])
+            ])                  
+ 
+                 
 \TLV openpiton_transducer()
    |fetch
       /instr
-         
+            $mem_valid = reset
             \SV_plus              
                // ** DECODER ** //              
                reg current_val;
@@ -4209,13 +4227,19 @@ m4+module_def
    
 
    m4+cpu(/top)
+   // m4_ifelse_block(M4_FORMAL, 1, ['
+   //       m4+formal()
+   //    '], 
+   //    m4_ifelse_block(M4_OPENPITON, 1, ['
+   //       m4+openpiton_transducer()
+   //    '], 
+   //    ['']))
    m4_ifelse_block(M4_FORMAL, 1, ['
-         m4+formal()
-      '], 
-      m4_ifelse_block(M4_OPENPITON, 1, ['
-         m4+openpiton_transducer()
-      '], 
-      ['']))
+      m4+formal()
+   '], M4_OPENPITON, 1, ['
+      m4+openpiton_transducer()
+   '])
+
 
 // Can be used to build for many-core without a NoC (during development).
 \TLV dummy_noc(/_cpu)
