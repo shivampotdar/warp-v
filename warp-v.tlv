@@ -299,7 +299,7 @@ m4+definitions(['
    '])
    
    // Include visualization
-   m4_default(['M4_VIZ'], 1)
+   m4_default(['M4_VIZ'], 0)
    // Include testbench (for Makerchip simulation) (defaulted to 1).
    m4_default(['M4_IMPL'], 0)  // For implementation (vs. simulation).
    // Build for formal verification (defaulted to 0).
@@ -1149,6 +1149,22 @@ m4+definitions(['
             output logic [31: 0] rvfi_mem_rdata,  
             output logic [31: 0] rvfi_mem_wdata);'])'])
 '])
+
+//    m4_define(['m4_module_def'],
+//              ['m4_ifelse(M4_OPENPITON, 0, 
+//                          ['\SV['']m4_new_line['']m4_makerchip_module'],
+//                          ['   module warpv_openpiton(
+//             input             clk_gated,
+//             input             rst_n_f,
+//             output reg        warpv_transducer_mem_valid,
+//             input             transducer_warpv_mem_ready,
+//             output reg [31:0] warpv_transducer_mem_addr,
+//             output reg [31:0] warpv_transducer_mem_wdata,
+//             output reg [31:0] warpv_transducer_mem_wstrb,
+//             output reg [`L15_AMO_OP_WIDTH-1:0] warpv_transducer_mem_amo_op,
+//             input [31:0]      transducer_warpv_mem_rdata,
+//             input             warpv_int);'])'])
+// '])
 \SV
 m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/stevehoover/tlv_flow_lib/4bcf06b71272556ec7e72269152561902474848e/pipeflow_lib.tlv'])'])
 
@@ -2896,28 +2912,12 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 // ])
 
 // TODO : move to m4+definitions
-\SV
-   m4_define(['m4_module_def'],
-               ['m4_ifelse(M4_OPENPITON, 0, 
-               ['\SV['']m4_new_line['']m4_makerchip_module'],
-                     ['module warpv_openpiton(
-                        input             clk_gated,
-                        input             rst_n_f,
-                        output reg        warpv_transducer_mem_valid,
-                        input             transducer_warpv_mem_ready,
-                        output reg [31:0] warpv_transducer_mem_addr,
-                        output reg [31:0] warpv_transducer_mem_wdata,
-                        output reg [31:0] warpv_transducer_mem_wstrb,
-                        output reg [`L15_AMO_OP_WIDTH-1:0] warpv_transducer_mem_amo_op,
-                        input [31:0]      transducer_warpv_mem_rdata,
-                        input             warpv_int);'])'])
-            ])                  
- 
-                 
+                
 \TLV openpiton_transducer()
    |fetch
       /instr
-            $mem_valid = reset
+         @M4_REG_WR_STAGE
+            $mem_valid = reset;
             \SV_plus              
                // ** DECODER ** //              
                reg current_val;
@@ -2933,7 +2933,6 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                      prev_val    <= current_val;
                   end
                end
-
                // are we waiting for an ack
                reg ack_reg;
                reg ack_next;
@@ -2945,7 +2944,6 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                         ack_reg <= ack_next;
                   end
                end
-
                always @ (*) begin
                   // be careful with these conditionals.
                   if (l15_transducer_ack) begin
@@ -2958,16 +2956,57 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                         ack_next = ack_reg;
                   end
                end
-
+               // if we haven't got an ack and it's an old request, valid should be high
+               // otherwise if we got an ack valid should be high only if we got a new
+               // request
+               assign transducer_l15_val  =  (ack_reg == ACK_WAIT)   ?  warpv_transducer_mem_valid  :
+                                             (ack_reg == ACK_IDLE)   ?  new_request     :
+                            $mem_valid = reset
+            \SV_plus              
+               // ** DECODER ** //              
+               reg current_val;
+               reg prev_val;
+               wire new_request = current_val & ~prev_val;
+               always @(posedge clk)
+                  if(!rst_n) begin
+                     current_val <= 0;
+                     prev_val    <= 0;
+                  end
+                  else begin
+                     current_val <= warpv_transducer_mem_valid;
+                     prev_val    <= current_val;
+                  end
+               end
+               // are we waiting for an ack
+               reg ack_reg;
+               reg ack_next;
+               always @ (posedge clk) begin
+                  if (!rst_n) begin
+                        ack_reg <= 0;
+                  end
+                  else begin
+                        ack_reg <= ack_next;
+                  end
+               end
+               always @ (*) begin
+                  // be careful with these conditionals.
+                  if (l15_transducer_ack) begin
+                        ack_next = ACK_IDLE;
+                  end
+                  else if (new_request) begin
+                        ack_next = ACK_WAIT;
+                  end
+                  else begin
+                        ack_next = ack_reg;
+                  end
+               end
                // if we haven't got an ack and it's an old request, valid should be high
                // otherwise if we got an ack valid should be high only if we got a new
                // request
                assign transducer_l15_val  =  (ack_reg == ACK_WAIT)   ?  warpv_transducer_mem_valid  :
                                              (ack_reg == ACK_IDLE)   ?  new_request     :
                                                                         warpv_transducer_mem_valid;
-
                reg [31:0] warpv_wdata_flipped;
-
                // unused wires tie to zero
                assign transducer_l15_threadid         =  1'b0;
                assign transducer_l15_prefetch         =  1'b0;
@@ -2975,17 +3014,14 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                assign transducer_l15_data_next_entry  =  64'b0;
                assign transducer_l15_blockstore       =  1'b0;
                assign transducer_l15_blockinitstore   =  1'b0;
-
                // is this set when something in the l1 gets replaced? pico has no cache
                assign transducer_l15_l1rplway = 2'b0;
                // will pico ever need to invalidate cachelines?
                assign transducer_l15_invalidate_cacheline = 1'b0;
-
                // logic to check if a request is new
                assign transducer_l15_address  = {{8{warpv_transducer_mem_addr[31]}}, warpv_transducer_mem_addr};
                assign transducer_l15_nc       = warpv_transducer_mem_addr[31] | (transducer_l15_rqtype == `PCX_REQTYPE_AMO);
                assign transducer_l15_data     = {warpv_wdata_flipped, warpv_wdata_flipped};
-               
                // set rqtype specific data
                always @ *
                begin
@@ -2996,14 +3032,12 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                            // endian wizardry
                            warpv_wdata_flipped  =  {warpv_transducer_mem_wdata[7:0], warpv_transducer_mem_wdata[15:8],
                                                    warpv_transducer_mem_wdata[23:16], warpv_transducer_mem_wdata[31:24]};
-
                            // NO Atomics at the moment
                            // // if it's an atomic operation, modify the request type.
                            // // That's it
                            // if (pico_mem_amo_op != `L15_AMO_OP_NONE) begin
                            //    transducer_l15_rqtype = `PCX_REQTYPE_AMO;
                            // end
-
                            case(warpv_transducer_mem_wstrb)
                               4'b1111: begin
                                  transducer_l15_size = `MSG_DATA_SIZE_4B;
@@ -3033,14 +3067,11 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                         transducer_l15_size = 3'b0;
                   end
                end
-
                // ** ENCODER ** //
-
                reg [31:0] rdata_part;
                assign transducer_warpv_mem_rdata   =  {rdata_part[7:0], rdata_part[15:8],
                                                       rdata_part[23:16], rdata_part[31:24]};
                assign transducer_l15_req_ack       =  l15_transducer_val;
-               
                // keep track of whether we have received the wakeup interrupt
                reg int_recv;
                always @ (posedge clk) begin
@@ -3054,7 +3085,137 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                         warpv_int <= 1'b0;
                   end
                end
-                  
+               always @ * begin
+                  if (l15_transducer_val) begin
+                        case(l15_transducer_returntype)
+                           `LOAD_RET, `CPX_RESTYPE_ATOMIC_RES: begin
+                              // load
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b1;
+                              case(transducer_l15_address[3:2])
+                                    2'b00: begin
+                                       rdata_part = l15_transducer_data_0[63:32];
+                                    end
+                                    2'b01: begin
+                                       rdata_part = l15_transducer_data_0[31:0];
+                                    end
+                                    2'b10: begin
+                                       rdata_part = l15_transducer_data_1[63:32];
+                                    end
+                                    2'b11: begin
+                                       rdata_part = l15_transducer_data_1[31:0];
+                                    end
+                                    default: begin
+                                    end
+                              endcase 
+                           end
+                           `ST_ACK: begin
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b1;
+                              rdata_part = 32'b0;
+                           end
+                           `INT_RET: begin
+                              if (l15_transducer_data_0[17:16] == 2'b01) begin
+                                    int_recv = 1'b1;
+                              end
+                              else begin
+                                    int_recv = 1'b0;
+                              end
+                              transducer_warpv_mem_ready = 1'b0;
+                              rdata_part = 32'b0;
+                           end
+                           default: begin
+                              int_recv = 1'b0;
+                              transducer_warpv_mem_ready = 1'b0;
+                              rdata_part = 32'b0;
+                           end
+                        endcase 
+                  end
+                  else begin
+                        int_recv = 1'b0;
+                        transducer_warpv_mem_ready = 1'b0;
+                        rdata_part = 32'b0;
+                  end
+               end                                               warpv_transducer_mem_valid;
+               reg [31:0] warpv_wdata_flipped;
+               // unused wires tie to zero
+               assign transducer_l15_threadid         =  1'b0;
+               assign transducer_l15_prefetch         =  1'b0;
+               assign transducer_l15_csm_data         =  33'b0;
+               assign transducer_l15_data_next_entry  =  64'b0;
+               assign transducer_l15_blockstore       =  1'b0;
+               assign transducer_l15_blockinitstore   =  1'b0;
+               // is this set when something in the l1 gets replaced? pico has no cache
+               assign transducer_l15_l1rplway = 2'b0;
+               // will pico ever need to invalidate cachelines?
+               assign transducer_l15_invalidate_cacheline = 1'b0;
+               // logic to check if a request is new
+               assign transducer_l15_address  = {{8{warpv_transducer_mem_addr[31]}}, warpv_transducer_mem_addr};
+               assign transducer_l15_nc       = warpv_transducer_mem_addr[31] | (transducer_l15_rqtype == `PCX_REQTYPE_AMO);
+               assign transducer_l15_data     = {warpv_wdata_flipped, warpv_wdata_flipped};
+               // set rqtype specific data
+               always @ *
+               begin
+                  if (warpv_transducer_mem_valid) begin
+                     // store or atomic operation 
+                        if (warpv_transducer_mem_wstrb) begin
+                           transducer_l15_rqtype = `STORE_RQ;
+                           // endian wizardry
+                           warpv_wdata_flipped  =  {warpv_transducer_mem_wdata[7:0], warpv_transducer_mem_wdata[15:8],
+                                                   warpv_transducer_mem_wdata[23:16], warpv_transducer_mem_wdata[31:24]};
+                           // NO Atomics at the moment
+                           // // if it's an atomic operation, modify the request type.
+                           // // That's it
+                           // if (pico_mem_amo_op != `L15_AMO_OP_NONE) begin
+                           //    transducer_l15_rqtype = `PCX_REQTYPE_AMO;
+                           // end
+                           case(warpv_transducer_mem_wstrb)
+                              4'b1111: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_4B;
+                              end
+                              4'b1100, 4'b0011: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_2B;
+                              end
+                              4'b1000, 4'b0100, 4'b0010, 4'b0001: begin
+                                 transducer_l15_size = `MSG_DATA_SIZE_1B;
+                              end
+                              // this should never happen
+                              default: begin
+                                 transducer_l15_size = 0;
+                              end
+                           endcase
+                     end
+                     // load operation
+                     else begin
+                           warpv_wdata_flipped = 32'b0;
+                           transducer_l15_rqtype = `LOAD_RQ;
+                           transducer_l15_size = `MSG_DATA_SIZE_4B;
+                     end 
+                  end
+                  else begin
+                        warpv_wdata_flipped = 32'b0;
+                        transducer_l15_rqtype = 5'b0;
+                        transducer_l15_size = 3'b0;
+                  end
+               end
+               // ** ENCODER ** //
+               reg [31:0] rdata_part;
+               assign transducer_warpv_mem_rdata   =  {rdata_part[7:0], rdata_part[15:8],
+                                                      rdata_part[23:16], rdata_part[31:24]};
+               assign transducer_l15_req_ack       =  l15_transducer_val;
+               // keep track of whether we have received the wakeup interrupt
+               reg int_recv;
+               always @ (posedge clk) begin
+                  if (!rst_n) begin
+                        warpv_int <= 1'b0;
+                  end
+                  else if (int_recv) begin
+                        warpv_int <= 1'b1;
+                  end
+                  else if (warpv_int) begin
+                        warpv_int <= 1'b0;
+                  end
+               end
                always @ * begin
                   if (l15_transducer_val) begin
                         case(l15_transducer_returntype)
@@ -4280,7 +4441,6 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
    m4_popdef(['M4_HOP'])
    m4_popdef(['m4_prev_hop_index'])
 
-
 m4+module_def
 
 \TLV warpv()
@@ -4289,21 +4449,12 @@ m4+module_def
    //    THE MODEL
    //
    // =================
-   
-
    m4+cpu(/top)
    // m4_ifelse_block(M4_FORMAL, 1, ['
-   //       m4+formal()
-   //    '], 
-   //    m4_ifelse_block(M4_OPENPITON, 1, ['
-   //       m4+openpiton_transducer()
-   //    '], 
-   //    ['']))
-   m4_ifelse_block(M4_FORMAL, 1, ['
-      m4+formal()
-   '], M4_OPENPITON, 1, ['
-      m4+openpiton_transducer()
-   '])
+   // m4+formal()
+   // ']/*, M4_OPENPITON, 1, ['
+   // m4+openpiton_transducer()
+   // '])*/
 
 
 // Can be used to build for many-core without a NoC (during development).
