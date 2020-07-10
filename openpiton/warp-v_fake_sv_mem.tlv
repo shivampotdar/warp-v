@@ -1,6 +1,5 @@
 \m4_TLV_version 1d: tl-x.org
 \SV
-
    // -----------------------------------------------------------------------------
    // Copyright (c) 2018, Steven F. Hoover
    // 
@@ -110,27 +109,14 @@ m4+definitions(['
    //
    // Long-latency non-pipelined instructions:
    //
-   //   o In the current implementation, floating point and integer multiplication / 
-   //     division instructions are non-pipelined, followed by "no-fetch" cycles 
-   //     until the next redirect (which will be a second issue of the instruction).
+   //   o FP and mul/div are likely to take multiple cycles to execute, may not be pipelined, and 
+   //     are likely to utilize the ALU iteratively. These are followed by "no-fetch" cycles until
+   //     the next redirect (which will be a second issue of the instruction).
    //   o The data required during second can be passed to the commit stage using /orig_inst scope
    //   o It does not matter whether registers are marked pending, but we do.
    //   o Process redirect conditions take care of the correct handling of PC for such instrctions.
    //   o \TLV m_extension() can serve as a reference implementation for correctly stalling the pipeline
    //     for such instructions
-   // 
-   // Handling loads and long-latency instructions:
-   //    
-   //   o For any instruction that requires second issue, some of its attributes (such as
-   //     destination register, raw value, rs1/rs2/rd) depending on where they are consumed
-   //     need to be retained. $ANY construct is used to make this logic generic and use-dependent. 
-   //   o In case of loads, the /orig_load_inst scope is used to hook up the 
-   //     mem pipeline to the CPU pipeline in first pipestage (of CPU) to reserve slot for the load 
-   //     flowing from mem to CPU in the second issue.
-   //   o For non-pipelined instructions such as mul-div, the /hold_inst scope retains the values
-   //     till the second issue. 
-   //   o Both the scopes are merged into /orig_inst scope depending on which instruction the second
-   //     issue belongs to.
    //
    // Bypass:
    //
@@ -299,17 +285,11 @@ m4+definitions(['
    '])
    
    // Include visualization
-   m4_default(['M4_VIZ'], 0)
+   m4_default(['M4_VIZ'], 1)
    // Include testbench (for Makerchip simulation) (defaulted to 1).
    m4_default(['M4_IMPL'], 0)  // For implementation (vs. simulation).
    // Build for formal verification (defaulted to 0).
    m4_default(['M4_FORMAL'], 0)  // 1 to enable code for formal verification
-	m4_default(['M4_RISCV_FORMAL_ALTOPS'], 0)  // riscv-formal uses alternate operations (add/sub and xor with a constant value)
-                                              // instead of actual mul/div, this is enabled automatically when formal is used, 
-                                              // can be enabled manually for testing in Makerchip environment.
-
-   // For openpiton transducer
-   m4_default(['M4_OPENPITON'], 1)  // 1 to generate interface for Openpiton
 
    // A hook for a software-controlled reset. None by default.
    m4_define(['m4_soft_reset'], 1'b0)
@@ -430,7 +410,7 @@ m4+definitions(['
          m4_defines(
             (['M4_EXT_E'], 1),
             (['M4_EXT_I'], 1),
-            (['M4_EXT_M'], 0),
+            (['M4_EXT_M'], 1),
             (['M4_EXT_A'], 0),
             (['M4_EXT_F'], 0),
             (['M4_EXT_D'], 0),
@@ -1118,7 +1098,7 @@ m4+definitions(['
 
 
    // Define m4+module_def macro to be used as a region line providing the module definition, either inside makerchip,
-   // or outside for formal. // RVFI module define
+   // or outside for formal.
    m4_define(['m4_module_def'],
              ['m4_ifelse(M4_FORMAL, 0,
                          ['\SV['']m4_new_line['']m4_makerchip_module'],
@@ -1149,21 +1129,6 @@ m4+definitions(['
             output logic [31: 0] rvfi_mem_rdata,  
             output logic [31: 0] rvfi_mem_wdata);'])'])
 '])
-
-//    m4_define(['m4_module_def'],
-//              ['m4_ifelse(M4_OPENPITON, 0, 
-//                          ['\SV['']m4_new_line['']m4_makerchip_module'],
-//                          ['   module warpv_openpiton(input clk_gated,
-//             input             rst_n_f,
-//             output reg        warpv_transducer_mem_valid,
-//             input             transducer_warpv_mem_ready,
-//             output reg [31:0] warpv_transducer_mem_addr,
-//             output reg [31:0] warpv_transducer_mem_wdata,
-//             output reg [31:0] warpv_transducer_mem_wstrb,
-//             output reg [`L15_AMO_OP_WIDTH-1:0] warpv_transducer_mem_amo_op,
-//             input [31:0]      transducer_warpv_mem_rdata,
-//             input             warpv_int);'])'])
-// '])
 \SV
 m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/stevehoover/tlv_flow_lib/4bcf06b71272556ec7e72269152561902474848e/pipeflow_lib.tlv'])'])
 
@@ -1910,23 +1875,14 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
    m4_echo(m4_decode_expr)
 
 \TLV riscv_rslt_mux_expr()
-   // in case of second issue, the results are pulled out of the /orig_inst or /load_inst scope. 
-   // no alignment is needed as the rslt mux and the long latency results both appear in the same pipestage.
-
-   // in the case of second isssue for multiplication with ALTOPS enabled (or running formal checks for M extension), 
-   // the module gives out the result in two cycles but we explicitly flop the $mul_rslt 
-   // (by alignment with 3+NON_PIPELINED_BUBBLES to augment the 5 cycle behavior of the mul operation
-
    $rslt[M4_WORD_RANGE] =
-         $second_issue_ld ? /orig_load_inst$ld_rslt : m4_ifelse_block(M4_EXT_M, 1, ['
-         ($second_issue_div_mul && |fetch/instr>>M4_NON_PIPELINED_BUBBLES$stall_cnt_upper_div) ? |fetch/instr$divblock_rslt : 
-         ($second_issue_div_mul && |fetch/instr>>M4_NON_PIPELINED_BUBBLES$stall_cnt_upper_mul) ? |fetch/instr['']m4_ifelse(M4_RISCV_FORMAL_ALTOPS,1,>>m4_eval(3+M4_NON_PIPELINED_BUBBLES))$mulblock_rslt :
-         '])
-         M4_WORD_CNT'b0['']m4_echo(m4_rslt_mux_expr);
+       $second_issue ? /orig_inst$late_rslt :
+                       M4_WORD_CNT'b0['']m4_echo(m4_rslt_mux_expr);
 
 \TLV riscv_decode()
    // TODO: ?$valid_<stage> conditioning should be replaced by use of m4_prev_instr_valid_through(..).
    ?$valid_decode
+
       // =================================
 
       // Extract fields of $raw (instruction) into $raw_<field>[x:0].
@@ -1956,9 +1912,15 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       
       m4_ifelse_block(M4_EXT_M, 1, ['
       // Instruction requires integer mul/div unit and is long-latency.
-      $divtype_instr = ($is_div_instr || $is_divu_instr || $is_rem_instr      || $is_remu_instr);
-      $multype_instr = ($is_mul_instr || $is_mulh_instr || $is_mulhsu_instr   || $is_mulhu_instr);
-      $div_mul       = ($multype_instr || $divtype_instr);
+      $divtype_instr = $is_div_instr ||
+                       $is_divu_instr ||
+                       $is_rem_instr ||
+                       $is_remu_instr;
+      $multype_instr = $is_mul_instr ||
+                       $is_mulh_instr ||
+                       $is_mulhsu_instr ||
+                       $is_mulhu_instr;       
+      $div_mul       = $multype_instr || $divtype_instr;
       '], ['
       $div_mul = 1'b0;
       $multype_instr = 1'b0;
@@ -2003,8 +1965,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       $is_srli_srai_instr = $is_srli_instr || $is_srai_instr;
       // Some I-type instructions have a funct7 field rather than immediate bits, so these must factor into the illegal instruction expression explicitly.
       $illegal_itype_with_funct7 = ( $is_srli_srai_instr m4_ifelse(M4_WORD_CNT, 64, ['|| $is_srliw_sraiw_instr']) ) && | {$raw_funct7[6], $raw_funct7[4:0]};
-      $illegal = ($illegal_itype_with_funct7['']m4_illegal_instr_expr) ||
-                 ($raw[1:0] != 2'b11); // All legal instructions have opcode[1:0] == 2'b11. We ignore these bits in decode logic.
+      $illegal = $illegal_itype_with_funct7['']m4_illegal_instr_expr;
       $conditional_branch = $is_b_type;
    $jump = $is_jal_instr;  // "Jump" in RISC-V means unconditional. (JALR is a separate redirect condition.)
    $branch = $is_b_type;
@@ -2028,7 +1989,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       $mnemonic[10*8-1:0] = m4_mnemonic_expr "ILLEGAL   ";
       `BOGUS_USE($mnemonic)
    // Condition signals must not themselves be conditioned (currently).
-   $dest_reg[M4_REGS_INDEX_RANGE] = m4_ifelse(M4_EXT_M, 1, ['$second_issue_div_mul ? |fetch/instr/hold_inst>>M4_NON_PIPELINED_BUBBLES$dest_reg :'])
+   $dest_reg[M4_REGS_INDEX_RANGE] = m4_ifelse(M4_EXT_M, 1, ['$second_issue_div_mul ? |fetch/instr/orig_inst>>M4_NON_PIPELINED_BUBBLES$divmul_dest_reg :'])
                                     $second_issue_ld ? |fetch/instr/orig_inst$dest_reg : $raw_rd;
    $dest_reg_valid = m4_ifelse(M4_EXT_F, 1, ['((! $fpu_type_instr) ||  $fmvxw_type_instr || $fcvtw_s_type_instr) &&']) (($valid_decode && ! $is_s_type && ! $is_b_type) || $second_issue) &&
                      | $dest_reg;   // r0 not valid.
@@ -2084,26 +2045,25 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       $valid_exe = $valid_decode; // Execute if we decoded.
       m4_ifelse_block(M4_EXT_M, 1, ['
       // Verilog instantiation must happen outside when conditions' scope
-      $divblk_valid = $divtype_instr && $commit;
+      $divblk_valid = >>1$div_stall;
       $mulblk_valid = $multype_instr && $commit;
       /* verilator lint_off WIDTH */
       /* verilator lint_off CASEINCOMPLETE */   
       m4+warpv_mul(|fetch/instr,/mul1, $mulblock_rslt, $wrm, $waitm, $readym, $clk, $resetn, $mul_in1, $mul_in2, $instr_type_mul, $mulblk_valid)
-      m4+warpv_div(|fetch/instr,/div1, $divblock_rslt, $wrd, $waitd, $readyd, $clk, $resetn, $div_in1, $div_in2, $instr_type_div, >>1$div_stall)
-      // for the division module, the valid signal must be asserted for the entire computation duration, hence >>1$div_stall is used for this purpose
-      // for multiplication it is just a single cycle pulse to start operating
-
+      m4+warpv_div(|fetch/instr,/div1, $divblock_rslt, $wrd, $waitd, $readyd, $clk, $resetn, $div_in1, $div_in2, $instr_type_div, $divblk_valid)
       /* verilator lint_on CASEINCOMPLETE */
       /* verilator lint_on WIDTH */
-      /hold_inst
-         // use $ANY for passing attributes from long-latency div/mul instructions into the pipeline 
-         // stall_cnt_upper_div indicates that the results for div module are ready. The second issue of the instruction takes place
-         // M4_NON_PIPELINED_BUBBLES after this point (depending on pipeline depth)
-         // retain till next M-type instruction, to be used again at second issue
-
-         $ANY = (|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit)) ? |fetch/instr$ANY : >>1$ANY;
-         /src[2:1]
-            $ANY = (|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit)) ? |fetch/instr/src$ANY : >>1$ANY;
+      /orig_inst
+         $second_issue = |fetch/instr$second_issue;
+         ?$second_issue
+         // put correctly aligned result for MUL and DIV Verilog modules into /orig_inst scope, 
+         // valid only when we have a second issue (no bogus values propagated)
+            $divmul_late_rslt[M4_WORD_RANGE] = |fetch/instr>>M4_NON_PIPELINED_BUBBLES$stall_cnt_upper_div ? |fetch/instr$divblock_rslt : |fetch/instr$mulblock_rslt;
+            // stall_cnt_upper_div indicates that the results for div module are ready. The second issue of the instruction takes place
+            // M4_NON_PIPELINED_BUBBLES after this point (depending on pipeline depth)
+         // put correctly aligned destination register for MUL and DIV Verilog modules into /orig_inst scope
+         // and RETAIN till next M-type instruction, to be used again at second issue
+         $divmul_dest_reg[M4_REGS_INDEX_RANGE]   = (|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit)) ? |fetch/instr$dest_reg : $RETAIN;
       '])
       m4_ifelse_block(M4_EXT_F, 1, ['
       // "F" Extension.
@@ -2212,21 +2172,18 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
          
          // "M" Extension.
          
-         m4_ifelse_block(M4_EXT_M, 1, ['
+         m4_ifelse_block(M4_EXT_M, 1, ['       
          // for Verilog modules instantiation
-         $clk = *clk;
-         $resetn = !(*reset);
-
-         $instr_type_mul[3:0]    = $reset ? '0 : $mulblk_valid ? {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr} : $RETAIN;
+         $clk = *clk;         
+         $resetn = !(*reset);         
+         $instr_type_mul[3:0] = {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr};
+         $instr_type_div[3:0] = {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr};
          $mul_in1[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[1]$reg_value : $RETAIN;
          $mul_in2[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[2]$reg_value : $RETAIN;
+         $div_in1[M4_WORD_RANGE] = $reset ? '0 : ($div_stall && $commit) ? /src[1]$reg_value : $RETAIN;
+         $div_in2[M4_WORD_RANGE] = $reset ? '0 : ($div_stall && $commit) ? /src[2]$reg_value : $RETAIN;
          
-         $instr_type_div[3:0]    = $reset ? '0 : $divblk_valid ? {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr}     : $RETAIN;
-         $div_in1[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[1]$reg_value : $RETAIN;
-         $div_in2[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[2]$reg_value : $RETAIN;
-         
-         // result signals for div/mul can be pulled down to 0 here, as they are assigned only in the second issue
-
+         // result signals
          $mul_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
          $mulh_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
          $mulhsu_rslt[M4_WORD_RANGE]   = M4_WORD_CNT'b0;
@@ -2318,7 +2275,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
          $unnatural_addr_trap = ($ld_st_word && ($addr[1:0] != 2'b00)) || ($ld_st_half && $addr[0]);
       $ld_st_cond = $ld_st && $valid_exe;
       ?$ld_st_cond
-         $addr[M4_ADDR_RANGE] = m4_ifelse(M4_EXT_F, 1, ['($is_fsw_instr ? /src[1]$reg_value : /src[1]$reg_value)'],['/src[1]$reg_value']) + ($ld ? $raw_i_imm : $raw_s_imm);
+         $addr[M4_ADDR_RANGE] = m4_ifelse(M4_EXT_F, 1, ['$is_fsw_instr ?  /fpusrc[1]$fpu_reg_value + ($ld ? $raw_i_imm : $raw_s_imm) :'])
+                                                 /src[1]$reg_value + ($ld ? $raw_i_imm : $raw_s_imm);
          
          // Hardware assumes natural alignment. Otherwise, trap, and handle in s/w (though no s/w provided).
       $st_cond = $st && $valid_exe;
@@ -2334,10 +2292,9 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
               $ld_st_word ? 4'hf :                     // word
               $ld_st_half ? ($addr[1] ? 4'hc : 4'h3) : // half
                             (4'h1 << $addr[1:0]);      // byte
-
-      // Swizzle bytes for load result (assuming natural alignment) and pass to /orig_load_inst scope
-      ?$second_issue_ld
-         /orig_load_inst
+      // Swizzle bytes for load result (assuming natural alignment).
+      ?$second_issue
+         /orig_inst
             $spec_ld_cond = $spec_ld;
             ?$spec_ld_cond
                // (Verilator didn't like indexing $ld_value by signal math, so we do these the long way.)
@@ -2360,6 +2317,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                                                     ($addr[1:0] == 2'b10) ? {$ld_value[23:16], 4'b0100} :
                                                                             {$ld_value[31:24], 4'b1000}};
                `BOGUS_USE($ld_mask) // It's only for formal verification.
+            $late_rslt[M4_WORD_RANGE] = m4_ifelse(M4_EXT_M, 1, ['|fetch/instr$second_issue_div_mul ? $divmul_late_rslt : ']) m4_ifelse(M4_EXT_F, 1, ['|fetch/instr$fpu_second_issue_div_sqrt ? $fpu_div_sqrt_late_rslt : '])$ld_rslt;
+            // either div_mul result or load
       // ISA-specific trap conditions:
       // I can't see in the spec which of these is to commit results. I've made choices that make riscv-formal happy.
       $non_aborting_isa_trap = ($branch && $taken && $misaligned_pc) ||
@@ -2858,421 +2817,6 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       $branch_target[M4_PC_RANGE] = $Pc + M4_PC_CNT'b1 + $rslt[M4_PC_RANGE];
          
 
-//=========================//
-//                         //
-//   OPENPITON INTERFACE   //
-//                         //
-//=========================//
-
-// m4_define(['m4_module_def'],
-//             ['m4_ifelse(M4_OPENPITON, 0,
-//             ['\SV['']m4_new_line['']m4_makerchip_module'],
-//                   ['module warpv_openpiton(
-//                      input logic clk,
-//                      input logic rst_n,
-   
-//                      // WARP-V --> L1.5
-//                      input                           warpv_transducer_mem_valid,
-//                      input [31:0]                    warpv_transducer_mem_addr,
-//                      input [ 3:0]                    warpv_transducer_mem_wstrb,
-
-//                      input [31:0]                    warpv_transducer_mem_wdata,
-//                      input [`L15_AMO_OP_WIDTH-1:0]   warpv_transducer_mem_amo_op,
-//                      input                           l15_transducer_ack,
-//                      input                           l15_transducer_header_ack,
-
-//                      // outputs warpv uses                    
-//                      output [4:0]                    transducer_l15_rqtype,
-//                      output [`L15_AMO_OP_WIDTH-1:0]  transducer_l15_amo_op,
-//                      output [2:0]                    transducer_l15_size,
-//                      output                          transducer_l15_val,
-//                      output [`PHY_ADDR_WIDTH-1:0]    transducer_l15_address,
-//                      output [63:0]                   transducer_l15_data,
-//                      output                          transducer_l15_nc,
-
-//                      // outputs warpv doesn't use                    
-//                      output [0:0]                    transducer_l15_threadid,
-//                      output                          transducer_l15_prefetch,
-//                      output                          transducer_l15_invalidate_cacheline,
-//                      output                          transducer_l15_blockstore,
-//                      output                          transducer_l15_blockinitstore,
-//                      output [1:0]                    transducer_l15_l1rplway,
-//                      output [63:0]                   transducer_l15_data_next_entry,
-//                      output [32:0]                   transducer_l15_csm_data,
-
-//                      //--- L1.5 -> WARP-V
-//                      input                           l15_transducer_val,
-//                      input [3:0]                     l15_transducer_returntype,
-                     
-//                      input [63:0]                    l15_transducer_data_0,
-//                      input [63:0]                    l15_transducer_data_1,
-                     
-//                      output                          transducer_warpv_mem_ready,
-//                      output [31:0]                   transducer_warpv_mem_rdata,
-                     
-//                      output                          transducer_l15_req_ack,
-//                      output                          warpv_int);'])'])
-// ])
-
-// TODO : move to m4+definitions
-                
-\TLV openpiton_transducer()
-   |fetch
-      /instr
-         @M4_REG_WR_STAGE
-            $mem_valid = reset;
-            \SV_plus              
-               // ** DECODER ** //              
-               reg current_val;
-               reg prev_val;
-               wire new_request = current_val & ~prev_val;
-               always @(posedge clk)
-                  if(!rst_n) begin
-                     current_val <= 0;
-                     prev_val    <= 0;
-                  end
-                  else begin
-                     current_val <= warpv_transducer_mem_valid;
-                     prev_val    <= current_val;
-                  end
-               end
-               // are we waiting for an ack
-               reg ack_reg;
-               reg ack_next;
-               always @ (posedge clk) begin
-                  if (!rst_n) begin
-                        ack_reg <= 0;
-                  end
-                  else begin
-                        ack_reg <= ack_next;
-                  end
-               end
-               always @ (*) begin
-                  // be careful with these conditionals.
-                  if (l15_transducer_ack) begin
-                        ack_next = ACK_IDLE;
-                  end
-                  else if (new_request) begin
-                        ack_next = ACK_WAIT;
-                  end
-                  else begin
-                        ack_next = ack_reg;
-                  end
-               end
-               // if we haven't got an ack and it's an old request, valid should be high
-               // otherwise if we got an ack valid should be high only if we got a new
-               // request
-               assign transducer_l15_val  =  (ack_reg == ACK_WAIT)   ?  warpv_transducer_mem_valid  :
-                                             (ack_reg == ACK_IDLE)   ?  new_request     :
-                            $mem_valid = reset
-            \SV_plus              
-               // ** DECODER ** //              
-               reg current_val;
-               reg prev_val;
-               wire new_request = current_val & ~prev_val;
-               always @(posedge clk)
-                  if(!rst_n) begin
-                     current_val <= 0;
-                     prev_val    <= 0;
-                  end
-                  else begin
-                     current_val <= warpv_transducer_mem_valid;
-                     prev_val    <= current_val;
-                  end
-               end
-               // are we waiting for an ack
-               reg ack_reg;
-               reg ack_next;
-               always @ (posedge clk) begin
-                  if (!rst_n) begin
-                        ack_reg <= 0;
-                  end
-                  else begin
-                        ack_reg <= ack_next;
-                  end
-               end
-               always @ (*) begin
-                  // be careful with these conditionals.
-                  if (l15_transducer_ack) begin
-                        ack_next = ACK_IDLE;
-                  end
-                  else if (new_request) begin
-                        ack_next = ACK_WAIT;
-                  end
-                  else begin
-                        ack_next = ack_reg;
-                  end
-               end
-               // if we haven't got an ack and it's an old request, valid should be high
-               // otherwise if we got an ack valid should be high only if we got a new
-               // request
-               assign transducer_l15_val  =  (ack_reg == ACK_WAIT)   ?  warpv_transducer_mem_valid  :
-                                             (ack_reg == ACK_IDLE)   ?  new_request     :
-                                                                        warpv_transducer_mem_valid;
-               reg [31:0] warpv_wdata_flipped;
-               // unused wires tie to zero
-               assign transducer_l15_threadid         =  1'b0;
-               assign transducer_l15_prefetch         =  1'b0;
-               assign transducer_l15_csm_data         =  33'b0;
-               assign transducer_l15_data_next_entry  =  64'b0;
-               assign transducer_l15_blockstore       =  1'b0;
-               assign transducer_l15_blockinitstore   =  1'b0;
-               // is this set when something in the l1 gets replaced? pico has no cache
-               assign transducer_l15_l1rplway = 2'b0;
-               // will pico ever need to invalidate cachelines?
-               assign transducer_l15_invalidate_cacheline = 1'b0;
-               // logic to check if a request is new
-               assign transducer_l15_address  = {{8{warpv_transducer_mem_addr[31]}}, warpv_transducer_mem_addr};
-               assign transducer_l15_nc       = warpv_transducer_mem_addr[31] | (transducer_l15_rqtype == `PCX_REQTYPE_AMO);
-               assign transducer_l15_data     = {warpv_wdata_flipped, warpv_wdata_flipped};
-               // set rqtype specific data
-               always @ *
-               begin
-                  if (warpv_transducer_mem_valid) begin
-                     // store or atomic operation 
-                        if (warpv_transducer_mem_wstrb) begin
-                           transducer_l15_rqtype = `STORE_RQ;
-                           // endian wizardry
-                           warpv_wdata_flipped  =  {warpv_transducer_mem_wdata[7:0], warpv_transducer_mem_wdata[15:8],
-                                                   warpv_transducer_mem_wdata[23:16], warpv_transducer_mem_wdata[31:24]};
-                           // NO Atomics at the moment
-                           // // if it's an atomic operation, modify the request type.
-                           // // That's it
-                           // if (pico_mem_amo_op != `L15_AMO_OP_NONE) begin
-                           //    transducer_l15_rqtype = `PCX_REQTYPE_AMO;
-                           // end
-                           case(warpv_transducer_mem_wstrb)
-                              4'b1111: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_4B;
-                              end
-                              4'b1100, 4'b0011: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_2B;
-                              end
-                              4'b1000, 4'b0100, 4'b0010, 4'b0001: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_1B;
-                              end
-                              // this should never happen
-                              default: begin
-                                 transducer_l15_size = 0;
-                              end
-                           endcase
-                     end
-                     // load operation
-                     else begin
-                           warpv_wdata_flipped = 32'b0;
-                           transducer_l15_rqtype = `LOAD_RQ;
-                           transducer_l15_size = `MSG_DATA_SIZE_4B;
-                     end 
-                  end
-                  else begin
-                        warpv_wdata_flipped = 32'b0;
-                        transducer_l15_rqtype = 5'b0;
-                        transducer_l15_size = 3'b0;
-                  end
-               end
-               // ** ENCODER ** //
-               reg [31:0] rdata_part;
-               assign transducer_warpv_mem_rdata   =  {rdata_part[7:0], rdata_part[15:8],
-                                                      rdata_part[23:16], rdata_part[31:24]};
-               assign transducer_l15_req_ack       =  l15_transducer_val;
-               // keep track of whether we have received the wakeup interrupt
-               reg int_recv;
-               always @ (posedge clk) begin
-                  if (!rst_n) begin
-                        warpv_int <= 1'b0;
-                  end
-                  else if (int_recv) begin
-                        warpv_int <= 1'b1;
-                  end
-                  else if (warpv_int) begin
-                        warpv_int <= 1'b0;
-                  end
-               end
-               always @ * begin
-                  if (l15_transducer_val) begin
-                        case(l15_transducer_returntype)
-                           `LOAD_RET, `CPX_RESTYPE_ATOMIC_RES: begin
-                              // load
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b1;
-                              case(transducer_l15_address[3:2])
-                                    2'b00: begin
-                                       rdata_part = l15_transducer_data_0[63:32];
-                                    end
-                                    2'b01: begin
-                                       rdata_part = l15_transducer_data_0[31:0];
-                                    end
-                                    2'b10: begin
-                                       rdata_part = l15_transducer_data_1[63:32];
-                                    end
-                                    2'b11: begin
-                                       rdata_part = l15_transducer_data_1[31:0];
-                                    end
-                                    default: begin
-                                    end
-                              endcase 
-                           end
-                           `ST_ACK: begin
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b1;
-                              rdata_part = 32'b0;
-                           end
-                           `INT_RET: begin
-                              if (l15_transducer_data_0[17:16] == 2'b01) begin
-                                    int_recv = 1'b1;
-                              end
-                              else begin
-                                    int_recv = 1'b0;
-                              end
-                              transducer_warpv_mem_ready = 1'b0;
-                              rdata_part = 32'b0;
-                           end
-                           default: begin
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b0;
-                              rdata_part = 32'b0;
-                           end
-                        endcase 
-                  end
-                  else begin
-                        int_recv = 1'b0;
-                        transducer_warpv_mem_ready = 1'b0;
-                        rdata_part = 32'b0;
-                  end
-               end                                               warpv_transducer_mem_valid;
-               reg [31:0] warpv_wdata_flipped;
-               // unused wires tie to zero
-               assign transducer_l15_threadid         =  1'b0;
-               assign transducer_l15_prefetch         =  1'b0;
-               assign transducer_l15_csm_data         =  33'b0;
-               assign transducer_l15_data_next_entry  =  64'b0;
-               assign transducer_l15_blockstore       =  1'b0;
-               assign transducer_l15_blockinitstore   =  1'b0;
-               // is this set when something in the l1 gets replaced? pico has no cache
-               assign transducer_l15_l1rplway = 2'b0;
-               // will pico ever need to invalidate cachelines?
-               assign transducer_l15_invalidate_cacheline = 1'b0;
-               // logic to check if a request is new
-               assign transducer_l15_address  = {{8{warpv_transducer_mem_addr[31]}}, warpv_transducer_mem_addr};
-               assign transducer_l15_nc       = warpv_transducer_mem_addr[31] | (transducer_l15_rqtype == `PCX_REQTYPE_AMO);
-               assign transducer_l15_data     = {warpv_wdata_flipped, warpv_wdata_flipped};
-               // set rqtype specific data
-               always @ *
-               begin
-                  if (warpv_transducer_mem_valid) begin
-                     // store or atomic operation 
-                        if (warpv_transducer_mem_wstrb) begin
-                           transducer_l15_rqtype = `STORE_RQ;
-                           // endian wizardry
-                           warpv_wdata_flipped  =  {warpv_transducer_mem_wdata[7:0], warpv_transducer_mem_wdata[15:8],
-                                                   warpv_transducer_mem_wdata[23:16], warpv_transducer_mem_wdata[31:24]};
-                           // NO Atomics at the moment
-                           // // if it's an atomic operation, modify the request type.
-                           // // That's it
-                           // if (pico_mem_amo_op != `L15_AMO_OP_NONE) begin
-                           //    transducer_l15_rqtype = `PCX_REQTYPE_AMO;
-                           // end
-                           case(warpv_transducer_mem_wstrb)
-                              4'b1111: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_4B;
-                              end
-                              4'b1100, 4'b0011: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_2B;
-                              end
-                              4'b1000, 4'b0100, 4'b0010, 4'b0001: begin
-                                 transducer_l15_size = `MSG_DATA_SIZE_1B;
-                              end
-                              // this should never happen
-                              default: begin
-                                 transducer_l15_size = 0;
-                              end
-                           endcase
-                     end
-                     // load operation
-                     else begin
-                           warpv_wdata_flipped = 32'b0;
-                           transducer_l15_rqtype = `LOAD_RQ;
-                           transducer_l15_size = `MSG_DATA_SIZE_4B;
-                     end 
-                  end
-                  else begin
-                        warpv_wdata_flipped = 32'b0;
-                        transducer_l15_rqtype = 5'b0;
-                        transducer_l15_size = 3'b0;
-                  end
-               end
-               // ** ENCODER ** //
-               reg [31:0] rdata_part;
-               assign transducer_warpv_mem_rdata   =  {rdata_part[7:0], rdata_part[15:8],
-                                                      rdata_part[23:16], rdata_part[31:24]};
-               assign transducer_l15_req_ack       =  l15_transducer_val;
-               // keep track of whether we have received the wakeup interrupt
-               reg int_recv;
-               always @ (posedge clk) begin
-                  if (!rst_n) begin
-                        warpv_int <= 1'b0;
-                  end
-                  else if (int_recv) begin
-                        warpv_int <= 1'b1;
-                  end
-                  else if (warpv_int) begin
-                        warpv_int <= 1'b0;
-                  end
-               end
-               always @ * begin
-                  if (l15_transducer_val) begin
-                        case(l15_transducer_returntype)
-                           `LOAD_RET, `CPX_RESTYPE_ATOMIC_RES: begin
-                              // load
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b1;
-                              case(transducer_l15_address[3:2])
-                                    2'b00: begin
-                                       rdata_part = l15_transducer_data_0[63:32];
-                                    end
-                                    2'b01: begin
-                                       rdata_part = l15_transducer_data_0[31:0];
-                                    end
-                                    2'b10: begin
-                                       rdata_part = l15_transducer_data_1[63:32];
-                                    end
-                                    2'b11: begin
-                                       rdata_part = l15_transducer_data_1[31:0];
-                                    end
-                                    default: begin
-                                    end
-                              endcase 
-                           end
-                           `ST_ACK: begin
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b1;
-                              rdata_part = 32'b0;
-                           end
-                           `INT_RET: begin
-                              if (l15_transducer_data_0[17:16] == 2'b01) begin
-                                    int_recv = 1'b1;
-                              end
-                              else begin
-                                    int_recv = 1'b0;
-                              end
-                              transducer_warpv_mem_ready = 1'b0;
-                              rdata_part = 32'b0;
-                           end
-                           default: begin
-                              int_recv = 1'b0;
-                              transducer_warpv_mem_ready = 1'b0;
-                              rdata_part = 32'b0;
-                           end
-                        endcase 
-                  end
-                  else begin
-                        int_recv = 1'b0;
-                        transducer_warpv_mem_ready = 1'b0;
-                        rdata_part = 32'b0;
-                  end
-               end
-
-
 
 
 
@@ -3294,69 +2838,6 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 // A fake memory with fixed latency.
 // The memory is placed in the fetch pipeline.
 // TODO: (/_cpu, @_mem, @_align)
-\SV
-   module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
-      input   clk, valid_st, spec_ld,
-      input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
-      input   [ADDR_WIDTH-1:0]	    addr,      
-      input   [NB_COL*COL_WIDTH-1:0]  din,
-      output  [NB_COL*COL_WIDTH-1:0]  dout
-   );
-      
-      reg   [NB_COL*COL_WIDTH-1:0] outputreg;   
-      reg	[NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
-      
-      always @(posedge clk) begin
-         if(spec_ld) begin
-            outputreg <= RAM[addr];
-         end
-      end
-
-      assign dout = outputreg;
-
-      generate
-         genvar i;
-         for (i = 0; i < NB_COL; i = i+1) begin
-         always @(posedge clk) begin 
-            if (valid_st && we[i]) 
-               RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
-            end
-         end
-      endgenerate        
-   endmodule
-
-//\TLV verilog_fake_memory(/_cpu, /_pipe, /_scope, M4_ALIGNMENT_VALUE)
-\TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
-   |fetch
-      /instr
-//   /_pipe
-//      /_scope
-         @M4_MEM_WR_STAGE
-            \SV_plus
-               dmem_ext #(
-                     .SIZE(M4_DATA_MEM_WORDS_HIGH), 
-                     .ADDR_WIDTH(M4_DATA_MEM_WORDS_INDEX_HIGH), 
-                     .COL_WIDTH(M4_WORD_HIGH / M4_ADDRS_PER_WORD), 
-                     .NB_COL(M4_ADDRS_PER_WORD)
-                     )
-               dmem_ext (
-                     .clk     (*clk),
-                     .valid_st($valid_st),
-                     .spec_ld ($spec_ld),
-                     .addr    ($addr[M4_DATA_MEM_WORDS_INDEX_MAX + M4_SUB_WORD_BITS : M4_SUB_WORD_BITS]),
-                     .we      ($st_mask),
-                     .din     ($st_value), 
-                     .dout    ($$ld_value[31:0])
-                     );
-
-   |mem
-      /data
-         @m4_eval(m4_strip_prefix(['@M4_MEM_WR_STAGE']) - M4_ALIGNMENT_VALUE)
-            $ANY = /_cpu|fetch/instr>>M4_ALIGNMENT_VALUE$ANY;
-            /src[2:1]
-               $ANY = /_cpu|fetch/instr/src>>M4_ALIGNMENT_VALUE$ANY;
-
-
 \TLV fixed_latency_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
    // This macro assumes little-endian.
    m4_ifelse(M4_BIG_ENDIAN, 0, [''], ['m4_errprint(['Error: fixed_latency_fake_memory macro only supports little-endian memory.'])'])
@@ -3447,20 +2928,11 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 \SV
    m4_ifelse_block(M4_EXT_M, 1, ['
       m4_ifelse(M4_ISA, ['RISCV'], [''], ['m4_errprint(['M-ext supported for RISC-V only.']m4_new_line)'])
-      m4_ifelse_block(M4_FORMAL, ['1'], ['
-         m4_define(M4_RISCV_FORMAL_ALTOPS, 1)         // enable ALTOPS if compiling for formal verification of M extension
-      '])
-      m4_ifelse_block(M4_RISCV_FORMAL_ALTOPS, 1, ['
-			`define RISCV_FORMAL_ALTOPS
-		'])
       /* verilator lint_off WIDTH */
-      /* verilator lint_off CASEINCOMPLETE */
-      // TODO : Update links after merge to master!
-      m4_sv_include_url(['https:/']['/raw.githubusercontent.com/shivampotdar/warp-v/m_ext_formal/muldiv/picorv32_pcpi_div.sv'])
-      m4_sv_include_url(['https:/']['/raw.githubusercontent.com/shivampotdar/warp-v/m_ext_formal/muldiv/picorv32_pcpi_fast_mul.sv'])
-      /* verilator lint_on CASEINCOMPLETE */
+      /* verilator lint_off CASEINCOMPLETE */   
+      m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v/master/muldiv/picorv32_pcpi_div.sv'])
+      m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v/master/muldiv/picorv32_pcpi_fast_mul.sv'])
       /* verilator lint_on WIDTH */
-         
    '])
 
 \TLV m_extension()
@@ -3474,18 +2946,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 
    // This macro handles the stalling logic using a counter, and triggers second issue accordingly.
 
-   // latency for division is different for ALTOPS case
-   m4_ifelse(M4_RISCV_FORMAL_ALTOPS, 1, ['
-        m4_define(['M4_DIV_LATENCY'], 12)          
-   '],['
-        m4_define(['M4_DIV_LATENCY'], 37)
-   '])
-   m4_define(['M4_MUL_LATENCY'], 5)       // latency for multiplication is 2 cycles in case of ALTOPS,
-                                          // but we flop it for 5 cycles (in rslt_mux) to augment the normal
-                                          // second issue behavior
-
-   // Relative to typical 1-cycle latency instructions.
-
+   m4_define(['M4_DIV_LATENCY'], 37)  // Relative to typical 1-cycle latency instructions.
+   m4_define(['M4_MUL_LATENCY'], 5)
    @M4_NEXT_PC_STAGE
       $second_issue_div_mul = >>M4_NON_PIPELINED_BUBBLES$trigger_next_pc_div_mul_second_issue;
    @M4_EXECUTE_STAGE
@@ -3514,7 +2976,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                                                                // should not be encountered ideally
 
       $mul_insn[31:0] = {7'b0000001,10'b0011000101,$opcode,5'b00101,7'b0110011};
-                     // {  funct7  ,{rs2, rs1} (X), funct3, rd (X),  opcode  }   
+                        // {  funct7  ,{rs2, rs1} (X), funct3, rd (X),  opcode  }   
       // this module is located in ./muldiv/picorv32_pcpi_fast_mul.sv
       \SV_plus      
             picorv32_pcpi_fast_mul #(.EXTRA_MUL_FFS(1), .EXTRA_INSN_FFS(1), .MUL_CLKGATE(0)) mul(
@@ -3540,10 +3002,10 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                      (/_top$_instr_type == 4'b0010 ) ? 3'b101 : // divu
                      (/_top$_instr_type == 4'b0100 ) ? 3'b110 : // rem
                      (/_top$_instr_type == 4'b1000 ) ? 3'b111 : // remu
-                                                       3'b100 ; // default to div, but this case 
+                                                       3'b100 ; // default to mul, but this case 
                                                                 // should not be encountered ideally
       $div_insn[31:0] = {7'b0000001,10'b0011000101,3'b000,5'b00101,7'b0110011} | ($opcode << 12);
-                     // {  funct7  ,{rs2, rs1} (X), funct3, rd (X),  opcode  }   
+                        // {  funct7  ,{rs2, rs1} (X), funct3, rd (X),  opcode  }   
       // this module is located in ./muldiv/picorv32_div_opt.sv
       \SV_plus
             picorv32_pcpi_div div(
@@ -3867,29 +3329,14 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             $second_issue_ld = /_cpu|mem/data>>M4_LD_RETURN_ALIGN$valid_ld && 1'b['']M4_INJECT_RETURNING_LD;
             $second_issue = $second_issue_ld m4_ifelse(M4_EXT_M, 1, ['|| $second_issue_div_mul']) m4_ifelse(M4_EXT_F, 1, ['|| $fpu_second_issue_div_sqrt']);
             // Recirculate returning load or the div_mul_result from /orig_inst scope
-            
-            ?$second_issue_ld
+
+            ?$second_issue
                // This scope holds the original load for a returning load.
-               /orig_load_inst
-                  $ANY = /_cpu|mem/data>>M4_LD_RETURN_ALIGN$ANY;
+               /orig_inst
+                  $ANY = |fetch/instr$second_issue_ld ? /_cpu|mem/data>>M4_LD_RETURN_ALIGN$ANY : m4_ifelse(M4_EXT_M,1,['|fetch/instr$second_issue_div_mul ? |fetch/instr/orig_inst>>M4_NON_PIPELINED_BUBBLES$ANY :']) m4_ifelse(M4_EXT_F,1,['|fetch/instr$fpu_second_issue_div_sqrt ? |fetch/instr/orig_inst>>M4_NON_PIPELINED_BUBBLES$ANY :']) >>1$ANY;
                   /src[2:1]
                      $ANY = /_cpu|mem/data/src>>M4_LD_RETURN_ALIGN$ANY;
-
-            ?$second_issue       
-               /orig_inst
-                  // pull values from /orig_load_inst or /hold_inst depending on which second issue
-                  m4_ifelse_block(M4_EXT_M, 1, ['
-                  $ANY = /instr$second_issue_ld ? /instr/orig_load_inst$ANY : /instr/hold_inst>>M4_NON_PIPELINED_BUBBLES$ANY;
-                  '], ['
-                  $ANY = /instr/orig_load_inst$ANY;
-                  '])
-                  /src[2:1]
-                     m4_ifelse_block(M4_EXT_M, 1, ['
-                     $ANY = /instr$second_issue_ld ? /instr/orig_load_inst/src$ANY : /instr/hold_inst/src>>M4_NON_PIPELINED_BUBBLES$ANY;
-                     '], ['
-                     $ANY = /instr/orig_load_inst/src$ANY;
-                     '])
-                  
+            
             // Next PC
             $pc_inc[M4_PC_RANGE] = $Pc + M4_PC_CNT'b1;
             // Current parsing does not allow concatenated state on left-hand-side, so, first, a non-state expression.
@@ -4054,10 +3501,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             '])
             $valid_ld = $ld && $commit;
             $valid_st = $st && $commit;
-            
-   m4+verilog_fake_memory(/_cpu, 0)
-//   m4+verilog_fake_memory(/_cpu, |fetch, /instr, 0)  
-//   m4+fixed_latency_fake_memory(/_cpu, 0)
+
+   m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
          @M4_REG_WR_STAGE
@@ -4114,39 +3559,26 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
    // /instr to avoid unnecessary recirculation.
    |fetch
       /instr
-         @M4_EXECUTE_STAGE
-            // characterise non-speculatively in execute stage
-
+         @M4_REG_WR_STAGE
+            
             $pc[M4_PC_RANGE] = $Pc[M4_PC_RANGE];  // A version of PC we can pull through $ANYs.
+            // This scope is a copy of /instr or /instr/orig_inst if $second_issue.
+            /original
+               $ANY = /instr$second_issue ? /instr/orig_inst$ANY : /instr$ANY;
+               /src[2:1]
+                  $ANY = /instr$second_issue ? /instr/orig_inst/src$ANY : /instr/src$ANY;
+
             // RVFI interface for formal verification.
             $trap = $aborting_trap ||
                     $non_aborting_trap;
             $rvfi_trap        = ! $reset && >>m4_eval(-M4_MAX_REDIRECT_BUBBLES + 1)$next_rvfi_good_path_mask[M4_MAX_REDIRECT_BUBBLES] &&
                                 $trap && ! $replay && ! $second_issue;  // Good-path trap, not aborted for other reasons.
-            
             // Order for the instruction/trap for RVFI check. (For split instructions, this is associated with the 1st issue, not the 2nd issue.)
             $rvfi_order[63:0] = $reset                  ? 64'b0 :
                                 ($commit || $rvfi_trap) ? >>1$rvfi_order + 64'b1 :
                                                           $RETAIN;
-         @M4_REG_WR_STAGE
-            // verify in register writeback stage
-
-            // This scope is a copy of /orig_inst if $second_issue, else pull current instruction
-
-            /original
-               $ANY = /instr$second_issue ? /instr/orig_inst$ANY : /instr$ANY;
-               /src[2:1]instr
-                  $ANY = /instr$second_issue ? /instr/orig_inst/src$ANY : /instr/src$ANY;
-
-            $would_reissue = ($ld || $div_mul);
-            $retire = ($commit && !$would_reissue ) || $second_issue;
-            // a load or div_mul instruction commits results in the second issue, hence the first issue is non-retiring
-            // for the first issue of these instructions, $rvfi_valid is not asserted and hence the current outputs are 
-            // not considered by riscv-formal
-
-            $rvfi_valid       = ! |fetch/instr<<m4_eval(M4_REG_WR_STAGE - (M4_NEXT_PC_STAGE - 1))$reset &&    // Avoid asserting before $reset propagates to this stage.
-                                ($retire && !$rvfi_trap );
-
+            $rvfi_valid       = ! <<m4_eval(M4_REG_WR_STAGE - (M4_NEXT_PC_STAGE - 1))$reset &&    // Avoid asserting before $reset propagates to this stage.
+                                (($commit && ! $ld) || $rvfi_trap || $second_issue);
             *rvfi_valid       = $rvfi_valid;
             *rvfi_halt        = $rvfi_trap;
             *rvfi_trap        = $rvfi_trap;
@@ -4161,7 +3593,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                *rvfi_rs1_rdata   = /src[1]$is_reg ? /src[1]$reg_value : M4_WORD_CNT'b0;
                *rvfi_rs2_rdata   = /src[2]$is_reg ? /src[2]$reg_value : M4_WORD_CNT'b0;
                *rvfi_rd_addr     = (/instr$dest_reg_valid && ! $abort) ? $raw_rd : 5'b0;
-               *rvfi_rd_wdata    = (| *rvfi_rd_addr) ? /instr$rslt : 32'b0;
+               *rvfi_rd_wdata    = *rvfi_rd_addr  ? /instr$rslt : 32'b0;
             *rvfi_pc_rdata    = {/original$pc[31:2], 2'b00};
             *rvfi_pc_wdata    = {$reset          ? M4_PC_CNT'b0 :
                                  $second_issue   ? /orig_inst$pc + 1'b1 :
@@ -4172,9 +3604,9 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                                  $indirect_jump  ? $indirect_jump_target :
                                  $pc[31:2] +1'b1, 2'b00};
             *rvfi_mem_addr    = (/original$ld || $valid_st) ? {/original$addr[M4_ADDR_MAX:2], 2'b0} : 0;
-            *rvfi_mem_rmask   = /original$ld ? /orig_load_inst$ld_mask : 0;
+            *rvfi_mem_rmask   = /original$ld ? /orig_inst$ld_mask : 0;
             *rvfi_mem_wmask   = $valid_st ? $st_mask : 0;
-            *rvfi_mem_rdata   = /original$ld ? /orig_load_inst$ld_value : 0;
+            *rvfi_mem_rdata   = /original$ld ? /orig_inst$ld_value : 0;
             *rvfi_mem_wdata   = $valid_st ? $st_value : 0;
 
             `BOGUS_USE(/src[2]$dummy)
@@ -4449,6 +3881,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
    m4_popdef(['M4_HOP'])
    m4_popdef(['m4_prev_hop_index'])
 
+
 m4+module_def
 
 \TLV warpv()
@@ -4457,13 +3890,12 @@ m4+module_def
    //    THE MODEL
    //
    // =================
-   m4+cpu(/top)
-   // m4_ifelse_block(M4_FORMAL, 1, ['
-   // m4+formal()
-   // ']/*, M4_OPENPITON, 1, ['
-   // m4+openpiton_transducer()
-   // '])*/
+   
 
+   m4+cpu(/top)
+   m4_ifelse_block(M4_FORMAL, 1, ['
+   m4+formal()
+   '], [''])
 
 // Can be used to build for many-core without a NoC (during development).
 \TLV dummy_noc(/_cpu)
@@ -4810,9 +4242,7 @@ m4+module_def
    m4+warpv()
    m4+warpv_makerchip_cnt10_tb()
    m4+makerchip_pass_fail()
-   m4_ifelse_block(M4_VIZ, 1, ['
    m4+cpu_viz(/top)
-   '])
    '])
 
 \SV
