@@ -3304,7 +3304,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       output  [NB_COL*COL_WIDTH-1:0]  dout
    );
       
-      reg [NB_COL*COL_WIDTH-1:0] outputreg;   
+      reg   [NB_COL*COL_WIDTH-1:0] outputreg;   
       reg	[NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
       
       always @(posedge clk) begin
@@ -3316,19 +3316,22 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       assign dout = outputreg;
 
       generate
-            genvar i;
-            for (i = 0; i < NB_COL; i = i+1) begin
-            always @(posedge clk) begin 
-               if (valid_st && we[i]) 
-                  RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
-               end
+         genvar i;
+         for (i = 0; i < NB_COL; i = i+1) begin
+         always @(posedge clk) begin 
+            if (valid_st && we[i]) 
+               RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
             end
+         end
       endgenerate        
    endmodule
 
-\TLV verilog_fake_memory(/_cpu, /_pipe, /_scope, M4_ALIGNMENT_VALUE)
-   /_pipe
-      /_scope
+//\TLV verilog_fake_memory(/_cpu, /_pipe, /_scope, M4_ALIGNMENT_VALUE)
+\TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
+   |fetch
+      /instr
+//   /_pipe
+//      /_scope
          @M4_MEM_WR_STAGE
             \SV_plus
                dmem_ext #(
@@ -4052,8 +4055,9 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             '])
             $valid_ld = $ld && $commit;
             $valid_st = $st && $commit;
-
-   m4+verilog_fake_memory(/_cpu, |fetch, /instr, 0)  
+            
+   m4+verilog_fake_memory(/_cpu, 0)
+//   m4+verilog_fake_memory(/_cpu, |fetch, /instr, 0)  
 //   m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
