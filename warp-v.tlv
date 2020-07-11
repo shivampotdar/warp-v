@@ -430,7 +430,7 @@ m4+definitions(['
          m4_defines(
             (['M4_EXT_E'], 1),
             (['M4_EXT_I'], 1),
-            (['M4_EXT_M'], 0),
+            (['M4_EXT_M'], 1),
             (['M4_EXT_A'], 0),
             (['M4_EXT_F'], 0),
             (['M4_EXT_D'], 0),
@@ -2166,11 +2166,12 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
       /* verilator lint_on WIDTH */
       /* verilator lint_on CASEINCOMPLETE */
       '])
-      
+      m4_ifelse(m4_eval(M4_EXT_M || M4_EXT_F), 1, ['
       /hold_inst
-         $ANY = m4_ifelse(M4_EXT_M,1,['(|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit))']) m4_ifelse(M4_EXT_F,1,['|| (|fetch/instr$fpu_div_sqrt_stall && |fetch/instr$commit)']) ? |fetch/instr$ANY : >>1$ANY;
+         $ANY = m4_ifelse(M4_EXT_M,1,['(|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit))']) m4_ifelse(M4_EXT_F, 1, m4_ifelse(M4_EXT_M, 1, ['||']) ['(|fetch/instr$fpu_div_sqrt_stall && |fetch/instr$commit)']) ? |fetch/instr$ANY : >>1$ANY;
          /src[2:1]
-            $ANY = m4_ifelse(M4_EXT_M,1,['(|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit))']) m4_ifelse(M4_EXT_F,1,['|| (|fetch/instr$fpu_div_sqrt_stall && |fetch/instr$commit)']) ? |fetch/instr/src$ANY : >>1$ANY;
+            $ANY = m4_ifelse(M4_EXT_M,1,['(|fetch/instr$mulblk_valid || (|fetch/instr$div_stall && |fetch/instr$commit))']) m4_ifelse(M4_EXT_F, 1, m4_ifelse(M4_EXT_M, 1, ['||']) ['(|fetch/instr$fpu_div_sqrt_stall && |fetch/instr$commit)']) ? |fetch/instr/src$ANY : >>1$ANY;
+      '])
       // Compute results for each instruction, independent of decode (power-hungry, but fast).
       ?$valid_exe
          $equal = /src[1]$reg_value == /src[2]$reg_value;
@@ -3341,35 +3342,36 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 // The memory is placed in the fetch pipeline.
 // TODO: (/_cpu, @_mem, @_align)
 \SV
-   module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
-      input   clk, valid_st, spec_ld,
-      input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
-      input   [ADDR_WIDTH-1:0]	    addr,      
-      input   [NB_COL*COL_WIDTH-1:0]  din,
-      output  [NB_COL*COL_WIDTH-1:0]  dout
-   );
+   m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v_includes/master/openpiton/dmem_ext.sv'])
+   // module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
+   //    input   clk, valid_st, spec_ld,
+   //    input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
+   //    input   [ADDR_WIDTH-1:0]	    addr,      
+   //    input   [NB_COL*COL_WIDTH-1:0]  din,
+   //    output  [NB_COL*COL_WIDTH-1:0]  dout
+   // );
       
-      reg   [NB_COL*COL_WIDTH-1:0] outputreg;   
-      reg	[NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
+   //    reg   [NB_COL*COL_WIDTH-1:0] outputreg;   
+   //    reg	[NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
       
-      always @(posedge clk) begin
-         if(spec_ld) begin
-            outputreg <= RAM[addr];
-         end
-      end
+   //    always @(posedge clk) begin
+   //       if(spec_ld) begin
+   //          outputreg <= RAM[addr];
+   //       end
+   //    end
 
-      assign dout = outputreg;
+   //    assign dout = outputreg;
 
-      generate
-         genvar i;
-         for (i = 0; i < NB_COL; i = i+1) begin
-         always @(posedge clk) begin 
-            if (valid_st && we[i]) 
-               RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
-            end
-         end
-      endgenerate        
-   endmodule
+   //    generate
+   //       genvar i;
+   //       for (i = 0; i < NB_COL; i = i+1) begin
+   //       always @(posedge clk) begin 
+   //          if (valid_st && we[i]) 
+   //             RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= din[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
+   //          end
+   //       end
+   //    endgenerate        
+   // endmodule
 
 //\TLV verilog_fake_memory(/_cpu, /_pipe, /_scope, M4_ALIGNMENT_VALUE)
 \TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
