@@ -430,7 +430,7 @@ m4+definitions(['
          m4_defines(
             (['M4_EXT_E'], 1),
             (['M4_EXT_I'], 1),
-            (['M4_EXT_M'], 1),
+            (['M4_EXT_M'], 0),
             (['M4_EXT_A'], 0),
             (['M4_EXT_F'], 0),
             (['M4_EXT_D'], 0),
@@ -1123,7 +1123,8 @@ m4+definitions(['
 
 
    // Define m4+module_def macro to be used as a region line providing the module definition, either inside makerchip,
-   // or outside for formal. // RVFI module define
+   // or outside for formal. 
+   // RVFI module define
    m4_define(['m4_module_def'],
              ['m4_ifelse(M4_FORMAL, 0,
                          ['\SV['']m4_new_line['']m4_makerchip_module'],
@@ -1155,20 +1156,6 @@ m4+definitions(['
             output logic [31: 0] rvfi_mem_wdata);'])'])
 '])
 
-//    m4_define(['m4_module_def'],
-//              ['m4_ifelse(M4_OPENPITON, 0, 
-//                          ['\SV['']m4_new_line['']m4_makerchip_module'],
-//                          ['   module warpv_openpiton(input clk_gated,
-//             input             rst_n_f,
-//             output reg        warpv_transducer_mem_valid,
-//             input             transducer_warpv_mem_ready,
-//             output reg [31:0] warpv_transducer_mem_addr,
-//             output reg [31:0] warpv_transducer_mem_wdata,
-//             output reg [31:0] warpv_transducer_mem_wstrb,
-//             output reg [`L15_AMO_OP_WIDTH-1:0] warpv_transducer_mem_amo_op,
-//             input [31:0]      transducer_warpv_mem_rdata,
-//             input             warpv_int);'])'])
-// '])
 \SV
 m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/stevehoover/tlv_flow_lib/4bcf06b71272556ec7e72269152561902474848e/pipeflow_lib.tlv'])'])
 
@@ -3380,9 +3367,8 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
 \TLV verilog_fake_memory(/_cpu, M4_ALIGNMENT_VALUE)
    |fetch
       /instr
-//   /_pipe
-//      /_scope
          @M4_MEM_WR_STAGE
+            $clk = *clk;
             \SV_plus
                dmem_ext #(
                      .SIZE(M4_DATA_MEM_WORDS_HIGH), 
@@ -3391,7 +3377,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
                      .NB_COL(M4_ADDRS_PER_WORD)
                      )
                dmem_ext (
-                     .clk     (*clk),
+                     .clk     ($clk),
                      .valid_st($valid_st),
                      .spec_ld ($spec_ld),
                      .addr    ($addr[M4_DATA_MEM_WORDS_INDEX_MAX + M4_SUB_WORD_BITS : M4_SUB_WORD_BITS]),
@@ -4103,8 +4089,7 @@ m4_ifexpr(M4_CORE_CNT > 1, ['m4_include_lib(['https://raw.githubusercontent.com/
             $valid_st = $st && $commit;
             
    m4+verilog_fake_memory(/_cpu, 0)
-//   m4+verilog_fake_memory(/_cpu, |fetch, /instr, 0)  
-//   m4+fixed_latency_fake_memory(/_cpu, 0)
+   // m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
          @M4_REG_WR_STAGE
@@ -4502,10 +4487,13 @@ m4+module_def
    //    THE MODEL
    //
    // =================
+   
+   
    m4+cpu(/top)
-   // m4_ifelse_block(M4_FORMAL, 1, ['
-   // m4+formal()
-   // ']/*, M4_OPENPITON, 1, ['
+   m4_ifelse_block(M4_FORMAL, 1, ['
+   m4+formal()
+   '], [''])
+   //, M4_OPENPITON, 1, ['
    // m4+openpiton_transducer()
    // '])*/
 
