@@ -1758,14 +1758,18 @@ m4+definitions(['
          $ori_rslt[M4_WORD_RANGE]   = /src[1]$reg_value | $raw_i_imm;
          $andi_rslt[M4_WORD_RANGE]  = /src[1]$reg_value & $raw_i_imm;
          $slli_rslt[M4_WORD_RANGE]  = /src[1]$reg_value << $raw_i_imm[5:0];
-         $srli_intermediate_rslt[M4_WORD_RANGE] = /src[1]$reg_value >> $raw_i_imm[5:0];
-         $srai_intermediate_rslt[M4_WORD_RANGE] = /src[1]$reg_value[M4_WORD_MAX] ? $srli_intermediate_rslt | ((M4_WORD_HIGH'b0 - 1) << (M4_WORD_HIGH - $raw_i_imm[5:0]) ): $srli_intermediate_rslt;
+         //$srli_intermediate_rslt[M4_WORD_RANGE] = /src[1]$reg_value >> $raw_i_imm[5:0];
+         //$srai_intermediate_rslt[M4_WORD_RANGE] = {{M4_WORD_HIGH{/src[1]$reg_value[M4_WORD_MAX]}}, /src[1]$reg_value} >> ($imm > M4_WORD_HIGH ? M4_WORD_HIGH : $imm);
+         //$srai_intermediate_rslt[M4_WORD_RANGE] = /src[1]$reg_value[M4_WORD_MAX] ? $srli_intermediate_rslt | ((M4_WORD_HIGH'b0 - 1) << (M4_WORD_HIGH - $raw_i_imm[5:0]) ): $srli_intermediate_rslt;
          $srl_rslt[M4_WORD_RANGE]   = /src[1]$reg_value >> /src[2]$reg_value[4:0];
-         $sra_rslt[M4_WORD_RANGE]   = /src[1]$reg_value[M4_WORD_MAX] ? $srl_rslt | ((M4_WORD_HIGH'b0 - 1) << (M4_WORD_HIGH - /src[2]$reg_value[4:0]) ): $srl_rslt;
+         /* verilator lint_off WIDTH */
+         $sra_rslt[M4_WORD_RANGE]   = {{M4_WORD_HIGH{/src[1]$reg_value[M4_WORD_MAX]}}, /src[1]$reg_value} >> (/src[2]$reg_value > M4_WORD_HIGH ? M4_WORD_HIGH : /src[2]$reg_value);
+         //$sra_rslt[M4_WORD_RANGE]   = /src[1]$reg_value[M4_WORD_MAX] ? $srl_rslt | ((M4_WORD_HIGH'b0 - 1) << (M4_WORD_HIGH - /src[2]$reg_value[4:0]) ): $srl_rslt;
          $slti_rslt[M4_WORD_RANGE]  =  (/src[1]$reg_value[M4_WORD_MAX] == $raw_i_imm[M4_WORD_MAX]) ? $sltiu_rslt : {M4_WORD_MAX'b0,/src[1]$reg_value[M4_WORD_MAX]};
          $sltiu_rslt[M4_WORD_RANGE] = (/src[1]$reg_value < $raw_i_imm) ? 1 : 0;
-         $srai_rslt[M4_WORD_RANGE]  = $srai_intermediate_rslt;
-         $srli_rslt[M4_WORD_RANGE]  = $srli_intermediate_rslt;
+         $srai_rslt[M4_WORD_RANGE]  = {{M4_WORD_HIGH{/src[1]$reg_value[M4_WORD_MAX]}}, /src[1]$reg_value} >> ($raw_i_imm > M4_WORD_HIGH ? M4_WORD_HIGH : $raw_i_imm);
+         /* verilator lint_on WIDTH */
+         $srli_rslt[M4_WORD_RANGE]  = /src[1]$reg_value >> $raw_i_imm[5:0];
          $add_sub_rslt[M4_WORD_RANGE] = ($raw_funct7[5] == 1) ?  /src[1]$reg_value - /src[2]$reg_value : /src[1]$reg_value + /src[2]$reg_value;
          $add_rslt[M4_WORD_RANGE]   = $add_sub_rslt;
          $sub_rslt[M4_WORD_RANGE]   = $add_sub_rslt;
