@@ -2879,7 +2879,7 @@ m4+definitions(['
 // The memory is placed in the fetch pipeline.
 // TODO: (/_cpu, @_mem, @_align)
 \SV
-   m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v_includes/master/openpiton/dmem_ext.sv'])
+   m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v_includes/master/openpiton/dmem_ext_comb_read_nox.sv'])
    // module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
    //    input   clk, valid_st, spec_ld,
    //    input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
