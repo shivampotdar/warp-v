@@ -1,4 +1,4 @@
-\m4_TLV_version 1d --xinj: tl-x.org
+\m4_TLV_version 1d: tl-x.org
 \SV
 
    // -----------------------------------------------------------------------------
@@ -3724,7 +3724,7 @@ m4+definitions(['
             // not considered by riscv-formal
 
             $rvfi_valid       = ! |fetch/instr<<m4_eval(M4_REG_WR_STAGE - (M4_NEXT_PC_STAGE - 1))$reset &&    // Avoid asserting before $reset propagates to this stage.
-                                ($retire & !$rvfi_trap );
+                                ($retire || $rvfi_trap );
             *rvfi_valid       = $rvfi_valid;
             *rvfi_halt        = $rvfi_trap;
             *rvfi_trap        = $rvfi_trap;
