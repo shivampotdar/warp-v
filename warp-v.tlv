@@ -276,7 +276,7 @@ m4+definitions(['
    // ISA:
    m4_default(['M4_ISA'], ['RISCV']) // MINI, RISCV, MIPSI, POWER, DUMMY, etc.
    // Select a standard configuration:
-   m4_default(['M4_STANDARD_CONFIG'], ['1-stage'])  // 1-stage, 4-stage, 6-stage, none (and define individual parameters).
+   m4_default(['M4_STANDARD_CONFIG'], ['4-stage'])  // 1-stage, 4-stage, 6-stage, none (and define individual parameters).
    
    // A multi-core implementation (currently RISC-V only) should:
    //   m4_define_hier(['M4_CORE'], #)
@@ -304,7 +304,7 @@ m4+definitions(['
    m4_default(['M4_IMPL'], 0)  // For implementation (vs. simulation).
    // Build for formal verification (defaulted to 0).
    m4_default(['M4_FORMAL'], 0)  // 1 to enable code for formal verification
-	m4_default(['M4_RISCV_FORMAL_ALTOPS'], 1)  // riscv-formal uses alternate operations (add/sub and xor with a constant value)
+	m4_default(['M4_RISCV_FORMAL_ALTOPS'], 0)  // riscv-formal uses alternate operations (add/sub and xor with a constant value)
                                               // instead of actual mul/div, this is enabled automatically when formal is used, 
                                               // can be enabled manually for testing in Makerchip environment.
 
