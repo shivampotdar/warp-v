@@ -1,4 +1,4 @@
-\m4_TLV_version 1d -p verilog: tl-x.org
+\m4_TLV_version 1d -p verilog --xinj: tl-x.org
 m4+definitions
    m4_define(['M4_ISA'], ['RISCV'])
    // Configure for formal verification.

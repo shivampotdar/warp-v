@@ -1,4 +1,4 @@
-\m4_TLV_version 1d: tl-x.org
+\m4_TLV_version 1d --xinj: tl-x.org
 \SV
 
    // -----------------------------------------------------------------------------
@@ -2879,7 +2879,8 @@ m4+definitions(['
 // The memory is placed in the fetch pipeline.
 // TODO: (/_cpu, @_mem, @_align)
 \SV
-   m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v_includes/master/openpiton/dmem_ext_nb.sv'])
+   //m4_sv_include_url(['https:/']['/raw.githubusercontent.com/stevehoover/warp-v_includes/master/openpiton/dmem_ext_nb.sv'])
+
    // module dmem_ext #(parameter SIZE = 1024, ADDR_WIDTH = 10, COL_WIDTH = 8, NB_COL	= 4) (
    //    input   clk, valid_st, spec_ld,
    //    input   [NB_COL-1:0]	        we,            // for enabling individual column accessible (for writes)
@@ -2930,7 +2931,7 @@ m4+definitions(['
                      .addr    ($addr[M4_DATA_MEM_WORDS_INDEX_MAX + M4_SUB_WORD_BITS : M4_SUB_WORD_BITS]),
                      .we      ($st_mask),
                      .din     ($st_value), 
-                     .dout    ($$ld_value[31:0])
+                     .dout    (<<1$$ld_value[31:0]) // TODO : use >>1
                      );
 
    |mem
@@ -3635,8 +3636,8 @@ m4+definitions(['
             $valid_ld = $ld && $commit;
             $valid_st = $st && $commit;
             
-   m4+verilog_fake_memory(/_cpu, 0)
-   // m4+fixed_latency_fake_memory(/_cpu, 0)
+   //m4+verilog_fake_memory(/_cpu, 0)
+   m4+fixed_latency_fake_memory(/_cpu, 0)
    |fetch
       /instr
          @M4_REG_WR_STAGE
