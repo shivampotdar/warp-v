@@ -1,7 +1,6 @@
 # TODO: Extend this to add job(s) for simulations, can be run in parallel with risc-v formal.
 
-dist: trusty
-sudo: false
+dist: bionic
 language: generic
 
 cache:
