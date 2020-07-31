@@ -1665,15 +1665,29 @@ m4+definitions(['
       // Verilog instantiation must happen outside when conditions' scope
       $divblk_valid = $divtype_instr && $commit;
       $mulblk_valid = $multype_instr && $commit;
+
+      $clk = *clk;
+      $resetn = !(*reset);
+
+      $instr_type_mul[3:0]    = $reset ? '0 : $mulblk_valid ? {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr} : $RETAIN;
+      $mul_in1[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[1]$reg_value : $RETAIN;
+      $mul_in2[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[2]$reg_value : $RETAIN;
+      
+      $instr_type_div[3:0]    = $reset ? '0 : $divblk_valid ? {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr} : $RETAIN;
+      $div_in1[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[1]$reg_value : $RETAIN;
+      $div_in2[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[2]$reg_value : $RETAIN;
+
+
       /* verilator lint_off WIDTH */
       /* verilator lint_off CASEINCOMPLETE */   
       m4+warpv_mul(|fetch/instr,/mul1, $mulblock_rslt, $wrm, $waitm, $readym, $clk, $resetn, $mul_in1, $mul_in2, $instr_type_mul, $mulblk_valid)
       m4+warpv_div(|fetch/instr,/div1, $divblock_rslt, $wrd, $waitd, $readyd, $clk, $resetn, $div_in1, $div_in2, $instr_type_div, >>1$div_stall)
+      /* verilator lint_on CASEINCOMPLETE */
+      /* verilator lint_on WIDTH */
+
       // for the division module, the valid signal must be asserted for the entire computation duration, hence >>1$div_stall is used for this purpose
       // for multiplication it is just a single cycle pulse to start operating
 
-      /* verilator lint_on CASEINCOMPLETE */
-      /* verilator lint_on WIDTH */
       // use $ANY for passing attributes from long-latency div/mul instructions into the pipeline 
       // stall_cnt_upper_div indicates that the results for div module are ready. The second issue of the instruction takes place
       // M4_NON_PIPELINED_BUBBLES after this point (depending on pipeline depth)
@@ -1791,30 +1805,20 @@ m4+definitions(['
          
          // "M" Extension.
          
-      m4_ifelse_block(M4_EXT_M, 1, ['
-      // for Verilog modules instantiation
-      $clk = *clk;
-      $resetn = !(*reset);
+         m4_ifelse_block(M4_EXT_M, 1, ['
+         // for Verilog modules instantiation
 
-      $instr_type_mul[3:0]    = $reset ? '0 : $mulblk_valid ? {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr} : $RETAIN;
-      $mul_in1[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[1]$reg_value : $RETAIN;
-      $mul_in2[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[2]$reg_value : $RETAIN;
-      
-      $instr_type_div[3:0]    = $reset ? '0 : $divblk_valid ? {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr} : $RETAIN;
-      $div_in1[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[1]$reg_value : $RETAIN;
-      $div_in2[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[2]$reg_value : $RETAIN;
-      
-      // result signals for div/mul can be pulled down to 0 here, as they are assigned only in the second issue
+         // result signals for div/mul can be pulled down to 0 here, as they are assigned only in the second issue
 
-      $mul_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-      $mulh_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-      $mulhsu_rslt[M4_WORD_RANGE]   = M4_WORD_CNT'b0;
-      $mulhu_rslt[M4_WORD_RANGE]    = M4_WORD_CNT'b0;
-      $div_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-      $divu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-      $rem_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-      $remu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-      `BOGUS_USE ($wrm $wrd $readyd $readym $waitm $waitd)
+         $mul_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+         $mulh_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+         $mulhsu_rslt[M4_WORD_RANGE]   = M4_WORD_CNT'b0;
+         $mulhu_rslt[M4_WORD_RANGE]    = M4_WORD_CNT'b0;
+         $div_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+         $divu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+         $rem_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+         $remu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+         `BOGUS_USE ($wrm $wrd $readyd $readym $waitm $waitd)
          '])
       
          // "F" Extension.
