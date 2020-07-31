@@ -1791,30 +1791,30 @@ m4+definitions(['
          
          // "M" Extension.
          
-         m4_ifelse_block(M4_EXT_M, 1, ['
-         // for Verilog modules instantiation
-         $clk = *clk;
-         $resetn = !(*reset);
+      m4_ifelse_block(M4_EXT_M, 1, ['
+      // for Verilog modules instantiation
+      $clk = *clk;
+      $resetn = !(*reset);
 
-         $instr_type_mul[3:0]    = $reset ? '0 : $mulblk_valid ? {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr} : $RETAIN;
-         $mul_in1[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[1]$reg_value : $RETAIN;
-         $mul_in2[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[2]$reg_value : $RETAIN;
-         
-         $instr_type_div[3:0]    = $reset ? '0 : $divblk_valid ? {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr} : $RETAIN;
-         $div_in1[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[1]$reg_value : $RETAIN;
-         $div_in2[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[2]$reg_value : $RETAIN;
-         
-         // result signals for div/mul can be pulled down to 0 here, as they are assigned only in the second issue
+      $instr_type_mul[3:0]    = $reset ? '0 : $mulblk_valid ? {$is_mulhu_instr,$is_mulhsu_instr,$is_mulh_instr,$is_mul_instr} : $RETAIN;
+      $mul_in1[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[1]$reg_value : $RETAIN;
+      $mul_in2[M4_WORD_RANGE] = $reset ? '0 : $mulblk_valid ? /src[2]$reg_value : $RETAIN;
+      
+      $instr_type_div[3:0]    = $reset ? '0 : $divblk_valid ? {$is_remu_instr,$is_rem_instr,$is_divu_instr,$is_div_instr} : $RETAIN;
+      $div_in1[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[1]$reg_value : $RETAIN;
+      $div_in2[M4_WORD_RANGE] = $reset ? '0 : $divblk_valid ? /src[2]$reg_value : $RETAIN;
+      
+      // result signals for div/mul can be pulled down to 0 here, as they are assigned only in the second issue
 
-         $mul_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-         $mulh_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-         $mulhsu_rslt[M4_WORD_RANGE]   = M4_WORD_CNT'b0;
-         $mulhu_rslt[M4_WORD_RANGE]    = M4_WORD_CNT'b0;
-         $div_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-         $divu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-         $rem_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
-         $remu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
-         `BOGUS_USE ($wrm $wrd $readyd $readym $waitm $waitd)
+      $mul_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+      $mulh_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+      $mulhsu_rslt[M4_WORD_RANGE]   = M4_WORD_CNT'b0;
+      $mulhu_rslt[M4_WORD_RANGE]    = M4_WORD_CNT'b0;
+      $div_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+      $divu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+      $rem_rslt[M4_WORD_RANGE]      = M4_WORD_CNT'b0;
+      $remu_rslt[M4_WORD_RANGE]     = M4_WORD_CNT'b0;
+      `BOGUS_USE ($wrm $wrd $readyd $readym $waitm $waitd)
          '])
       
          // "F" Extension.
