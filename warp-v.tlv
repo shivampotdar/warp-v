@@ -1527,17 +1527,18 @@ m4+definitions(['
       // Instruction decode.
       m4+riscv_decode_expr()
       
-      m4_ifelse_block(M4_EXT_M, 1, ['
-      // Instruction requires integer mul/div unit and is long-latency.
-      $divtype_instr = ($is_div_instr || $is_divu_instr || $is_rem_instr || $is_remu_instr);
-      $multype_instr = ($is_mul_instr || $is_mulh_instr || $is_mulhsu_instr || $is_mulhu_instr);
-      $div_mul       = ($multype_instr || $divtype_instr);
-      '], ['
-      $div_mul = 1'b0;
-      $multype_instr = 1'b0;
-      `BOGUS_USE($multype_instr)
-      '])
+   m4_ifelse_block(M4_EXT_M, 1, ['
+   // Instruction requires integer mul/div unit and is long-latency.
+   $divtype_instr = $valid_decode && ($is_div_instr || $is_divu_instr || $is_rem_instr || $is_remu_instr);
+   $multype_instr = $valid_decode && ($is_mul_instr || $is_mulh_instr || $is_mulhsu_instr || $is_mulhu_instr);
+   $div_mul       = $valid_decode && ($multype_instr || $divtype_instr);
+   '], ['
+   $div_mul = 1'b0;
+   $multype_instr = 1'b0;
+   `BOGUS_USE($multype_instr)
+   '])
 
+   ?$valid_decode
       m4_ifelse_block(M4_EXT_F, 1, ['
       // Instruction requires floating point unit and is long-latency.
       // TODO. Current implementation decodes the floating type instructions seperatly.
@@ -1579,13 +1580,14 @@ m4+definitions(['
       $fmvxw_type_instr = $is_fmvxw_instr;
       $fcvtw_s_type_instr = $is_fcvtws_instr || $is_fcvtwus_instr;
       '])
+      $conditional_branch = $is_b_type;
 
       $is_srli_srai_instr = $is_srli_instr || $is_srai_instr;
       // Some I-type instructions have a funct7 field rather than immediate bits, so these must factor into the illegal instruction expression explicitly.
-      $illegal_itype_with_funct7 = ( $is_srli_srai_instr m4_ifelse(M4_WORD_CNT, 64, ['|| $is_srliw_sraiw_instr']) ) && | {$raw_funct7[6], $raw_funct7[4:0]};
-      $illegal = ($illegal_itype_with_funct7['']m4_illegal_instr_expr) ||
-                 ($raw[1:0] != 2'b11); // All legal instructions have opcode[1:0] == 2'b11. We ignore these bits in decode logic.
-      $conditional_branch = $is_b_type;
+   
+   $illegal_itype_with_funct7 = $valid_decode && ( $is_srli_srai_instr m4_ifelse(M4_WORD_CNT, 64, ['|| $is_srliw_sraiw_instr']) ) && | {$raw_funct7[6], $raw_funct7[4:0]};
+   $illegal = $valid_decode && (($illegal_itype_with_funct7['']m4_illegal_instr_expr) ||
+                 ($raw[1:0] != 2'b11)); // All legal instructions have opcode[1:0] == 2'b11. We ignore these bits in decode logic.
    $jump = $is_jal_instr;  // "Jump" in RISC-V means unconditional. (JALR is a separate redirect condition.)
    $branch = $is_b_type;
    $indirect_jump = $is_jalr_instr;
@@ -1903,8 +1905,8 @@ m4+definitions(['
       m4+riscv_csr_logic()
       
       // Memory inputs.
-      ?$valid_exe
-         $unnatural_addr_trap = ($ld_st_word && ($addr[1:0] != 2'b00)) || ($ld_st_half && $addr[0]);
+      //?$valid_exe
+      $unnatural_addr_trap = (($ld_st_word && ($addr[1:0] != 2'b00)) || ($ld_st_half && $addr[0])) && $valid_exe;
       $ld_st_cond = $ld_st && $valid_exe;
       ?$ld_st_cond
          $addr[M4_ADDR_RANGE] = m4_ifelse(M4_EXT_F, 1, ['($is_fsw_instr ? /src[1]$reg_value : /src[1]$reg_value)'],['/src[1]$reg_value']) + ($ld ? $raw_i_imm : $raw_s_imm);
@@ -1951,11 +1953,14 @@ m4+definitions(['
                `BOGUS_USE($ld_mask) // It's only for formal verification.
       // ISA-specific trap conditions:
       // I can't see in the spec which of these is to commit results. I've made choices that make riscv-formal happy.
-      $non_aborting_isa_trap = ($branch && $taken && $misaligned_pc) ||
-                               ($jump && $misaligned_jump_target) ||
-                               ($indirect_jump && $misaligned_indirect_jump_target);
-      $aborting_isa_trap =     ($ld_st && $unnatural_addr_trap) ||
-                               $csr_trap;
+      // $non_aborting_isa_trap = ($branch && $taken && $misaligned_pc) ||
+      //                          ($jump && $misaligned_jump_target) ||
+      //                          ($indirect_jump && $misaligned_indirect_jump_target);
+      $aborting_isa_trap =    ($ld_st && $unnatural_addr_trap) ||
+                              $csr_trap || 
+                              ($jump && $misaligned_jump_target) ||
+                              ($indirect_jump && $misaligned_indirect_jump_target);
+      $non_aborting_isa_trap = ($branch && $taken && $misaligned_pc);
       
    @_rslt_stage
       // Mux the correct result.
@@ -2237,8 +2242,8 @@ m4+definitions(['
       // Memory inputs.
       // TODO: Logic for load/store is cut-n-paste from RISC-V, blindly assuming it is spec'ed the same for MIPS I?
       //       Load/Store half instructions unique vs. RISC-V and are not treated properly.
-      ?$valid_exe
-         $unnatural_addr_trap = ($ld_st_word && ($addr[1:0] != 2'b00)) || ($ld_st_half && $addr[0]);
+      //?$valid_exe
+      $unnatural_addr_trap = ($ld_st_word && ($addr[1:0] != 2'b00)) || ($ld_st_half && $addr[0]);
       $ld_st_cond = $ld_st && $valid_exe;
       ?$ld_st_cond
          $addr[M4_ADDR_RANGE] = /src[1]$reg_value + $imm_value;
@@ -3623,7 +3628,7 @@ m4+definitions(['
             // $commit = m4_prev_instr_valid_through(M4_MAX_REDIRECT_BUBBLES + 1), where +1 accounts for this
             // instruction's redirects. However, to meet timing, we consider this instruction separately, so,
             // commit if valid as of the latest redirect from prior instructions and not abort of this instruction.
-            m4_ifelse(M4_RETIMING_EXPERIMENT_ALWAYS_COMMIT, ['M4_RETIMING_EXPERIMENT_ALWAYS_COMMIT'], ['
+            m4_ifelse_block(M4_RETIMING_EXPERIMENT_ALWAYS_COMMIT, ['M4_RETIMING_EXPERIMENT_ALWAYS_COMMIT'], ['
             // Normal case:
             $commit = m4_prev_instr_valid_through(M4_MAX_REDIRECT_BUBBLES) && ! $abort;
             '], ['
@@ -3707,6 +3712,8 @@ m4+definitions(['
                     $non_aborting_trap;
             $rvfi_trap        = ! $reset && >>m4_eval(-M4_MAX_REDIRECT_BUBBLES + 1)$next_rvfi_good_path_mask[M4_MAX_REDIRECT_BUBBLES] &&
                                 $trap && ! $replay && ! $second_issue;  // Good-path trap, not aborted for other reasons.
+                                // pipeline --- rvfi gpm
+                                // second issue - trap of ghost - ignore
             
             // Order for the instruction/trap for RVFI check. (For split instructions, this is associated with the 1st issue, not the 2nd issue.)
             $rvfi_order[63:0] = $reset                  ? 64'b0 :
@@ -3729,7 +3736,8 @@ m4+definitions(['
             // not considered by riscv-formal
 
             $rvfi_valid       = ! |fetch/instr<<m4_eval(M4_REG_WR_STAGE - (M4_NEXT_PC_STAGE - 1))$reset &&    // Avoid asserting before $reset propagates to this stage.
-                                ($retire && !$rvfi_trap );
+                                //($retire && !$rvfi_trap);
+                                ($retire || $rvfi_trap);
             *rvfi_valid       = $rvfi_valid;
             *rvfi_halt        = $rvfi_trap;
             *rvfi_trap        = $rvfi_trap;
